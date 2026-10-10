@@ -206,6 +206,103 @@ with product decisions before implementation.
 | `serviceRequests` | `customerId`, `professionalId`, `serviceId`, `details`, `status`, `createdAt`, `updatedAt` | `problemId`, `requestedAt` | `{ "_id": "ObjectId", "customerId": "ObjectId", "professionalId": "ObjectId", "serviceId": "ObjectId", "details": "Please inspect a sink leak", "status": "pending", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `maintenanceRecords` | `ownerId`, `summary`, `completedAt`, `createdAt` | `problemId`, `performedBy` | `{ "_id": "ObjectId", "ownerId": "ObjectId", "summary": "Replaced sink washer", "completedAt": "ISODate", "createdAt": "ISODate" }` |
 
+## MongoDB collection relationship diagram (conceptual ERD)
+
+MongoDB is document-oriented, so this diagram is a logical relationship view of
+the proposed collections, not a relational schema or a claim that MongoDB
+enforces foreign-key constraints. Lines represent ObjectId references; the
+`serviceIds` array represents references to zero or more service documents.
+Relationships and cardinalities are proposed and must be enforced by backend
+validation.
+
+```mermaid
+erDiagram
+    USER {
+        ObjectId id PK
+        string email UK
+        string role
+    }
+    PROBLEM {
+        ObjectId id PK
+        ObjectId reporterId FK
+        ObjectId categoryId FK
+        string status
+    }
+    MAINTENANCE_CATEGORY {
+        ObjectId id PK
+        string name
+        ObjectId parentId FK
+    }
+    DIY_GUIDE {
+        ObjectId id PK
+        ObjectId categoryId FK
+        string title
+        boolean published
+    }
+    EQUIPMENT {
+        ObjectId id PK
+        ObjectId ownerId FK
+        ObjectId categoryId FK
+        boolean active
+    }
+    RENTAL_REQUEST {
+        ObjectId id PK
+        ObjectId renterId FK
+        ObjectId equipmentId FK
+        date startAt
+        date endAt
+        string status
+    }
+    PROFESSIONAL_PROFILE {
+        ObjectId id PK
+        ObjectId userId FK
+        ObjectId[] serviceIds FK
+        boolean active
+    }
+    SERVICE {
+        ObjectId id PK
+        string name
+        string description
+    }
+    SERVICE_REQUEST {
+        ObjectId id PK
+        ObjectId customerId FK
+        ObjectId professionalId FK
+        ObjectId serviceId FK
+        ObjectId problemId FK
+        string status
+    }
+    MAINTENANCE_RECORD {
+        ObjectId id PK
+        ObjectId ownerId FK
+        ObjectId problemId FK
+        date completedAt
+    }
+
+    USER ||--o{ PROBLEM : reports
+    MAINTENANCE_CATEGORY ||--o{ PROBLEM : classifies
+    MAINTENANCE_CATEGORY ||--o{ DIY_GUIDE : groups
+    MAINTENANCE_CATEGORY ||--o{ EQUIPMENT : categorizes
+    MAINTENANCE_CATEGORY o|--o{ MAINTENANCE_CATEGORY : parent_of
+    USER ||--o{ EQUIPMENT : owns
+    USER ||--o{ RENTAL_REQUEST : submits
+    EQUIPMENT ||--o{ RENTAL_REQUEST : requested_for
+    USER ||--o| PROFESSIONAL_PROFILE : has_profile
+    SERVICE }o--o{ PROFESSIONAL_PROFILE : offered_by
+    USER ||--o{ SERVICE_REQUEST : submits
+    PROFESSIONAL_PROFILE ||--o{ SERVICE_REQUEST : receives
+    SERVICE ||--o{ SERVICE_REQUEST : requested
+    PROBLEM o|--o{ SERVICE_REQUEST : relates_to
+    USER ||--o{ MAINTENANCE_RECORD : owns
+    PROBLEM o|--o{ MAINTENANCE_RECORD : documents
+```
+
+`SERVICE` is included as the referenced service catalog implied by
+`serviceIds` and `serviceId`; its fields and lifecycle still need confirmation.
+Optional references (such as a problem link on a service request) may be absent
+from a document. Exact one-to-one rules, deletion behavior, and any embedded
+versus referenced data decisions are implementation decisions.
+
 Email addresses should have a uniqueness constraint. Add indexes for fields
 used to look up ownership and references (for example `reporterId`,
 `equipmentId`, `professionalId`, and `categoryId`). The final indexing strategy,
