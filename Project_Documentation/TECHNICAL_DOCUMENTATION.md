@@ -20,7 +20,7 @@ flowchart LR
     U[User] --> UI[React client]
     UI -->|HTTPS: JSON or multipart upload| API[Node.js / Express API]
     API --> MW[Validation, authentication, authorization]
-    MW --> MOD[Feature modules]
+    MW --> MOD["Modules: Problems and DIY<br/>Rentals, Jobs and Applications<br/>Maintenance History"]
     MOD --> DB[(MongoDB)]
     API -.-> IMG[Optional image storage]
     API -.-> MAIL[Optional email service]
@@ -32,7 +32,8 @@ The planned feature modules are:
 - User and account management
 - Problem assessment and DIY guides
 - Equipment and rental requests
-- Professionals and service requests
+- Professional directory and direct service requests
+- Open job postings and technician applications
 - Maintenance history
 
 ## Front-end components and interactions
@@ -44,11 +45,15 @@ repository.
 | UI component / screen | Main responsibilities and interactions |
 | --- | --- |
 | `App` and `AppLayout` | Configure routes, shared page layout, navigation, loading/error boundaries, and session state. |
-| `HomePage` / `ProblemReportForm` | Collect problem location, category, description, and optional photo; submit to `POST /api/problems`; show validation feedback and the created report. |
-| `AssessmentPage` / `SolutionOptions` | Load the selected problem and present the available DIY, rental, and professional paths. Link to relevant guides, equipment, and professionals. |
+| `HomePage` / `JobPostingForm` | Collect problem location, category, description, and optional photo; publish through `POST /api/jobs`; show validation feedback and the open job. |
+| `AssessmentPage` / `SolutionOptions` | Load the selected problem and present DIY, rental, direct professional search/request, and job-posting paths. Link to relevant guides, equipment, and the user's service-request or job/application view. |
 | `GuideList` / `GuideViewer` | Request guides, render steps and safety notes, and let the user return to the assessment. |
 | `EquipmentList` / `RentalRequestForm` | Browse equipment; collect start/end dates; request availability-filtered listings; submit a rental request; display pending or conflict results. |
-| `ProfessionalDirectory` / `ServiceRequestForm` | Browse professionals and services; collect request details; submit the selected professional/service request and display its status. |
+| `ProfessionalDirectory` / `ProfessionalSearch` | Search active professional profiles by service and optional service area; display matching professionals and offered services. |
+| `ProfessionalProfileView` / `ServiceRequestForm` | Show a selected professional's details; collect service and request details; submit a direct service request and display its status. |
+| `AvailableJobsPage` / `JobList` | Let authenticated technicians browse jobs whose status is open; support agreed filters such as category and location. |
+| `JobApplicationForm` | Collect one or more services offered by the technician and a proposal; submit an application for an open job and show its status. |
+| `JobApplicationsPage` / `ApplicationReview` | Let the job owner compare applications, view proposed services, and accept or decline proposals. |
 | `MaintenanceHistoryPage` / `MaintenanceRecordForm` | Retrieve the user's records and submit a completed-maintenance record; show saved entries and API errors. |
 | `AuthForms` | Register or sign in if account flows are included in MVP; keep credentials and tokens out of logs and present authentication errors safely. |
 | Shared `FormField`, `StatusNotice`, and `LoadingState` | Reuse accessible form controls, field-level errors, request progress, success confirmation, and recoverable failure messaging. |
@@ -56,8 +61,10 @@ repository.
 Components should call a shared API client rather than issue ad-hoc requests
 from presentation code. Forms may provide immediate client-side feedback, but
 the server remains authoritative for validation, access checks, and rental
-availability. Exact route protection and sign-in requirements are product
-decisions to confirm.
+availability. Only technicians should see and apply to available jobs; only
+the job owner may review applications and accept a proposal. A user-selected
+professional receives a separate direct service request. Exact route
+protection and sign-in requirements should be confirmed.
 
 ## Request processing workflow
 
@@ -88,7 +95,7 @@ server credentials.
 
 ## Feature workflows
 
-### Problem report
+### Publish a maintenance job
 
 1. Collect problem location, category, and description; optionally collect a
    photo.
@@ -96,18 +103,33 @@ server credentials.
    photo.
 3. Validate the request and apply authentication/authorization policy.
 4. Persist the problem and, if enabled, store an image reference.
-5. Return the created result and allow the user to continue to assessment.
+5. Return the created open job and allow the user to continue to assessment or
+   review incoming applications later.
 
-`POST /api/problems` is an illustrative route in the architecture document,
-not a finalized API specification.
+`POST /api/jobs` creates a problem document with an open job status. It is a
+proposed route, not a finalized API specification.
 
-### Rental and professional requests
+### Rental requests and technician applications
 
-Both request workflows follow the standard request pipeline. For rentals,
-server-side availability validation is required before accepting a requested
-period. For professional services, validate the selected professional and
-service. Persist request status and return it to the client. Exact API
-contracts, status values, and transition rules remain to be designed.
+For rentals, server-side availability validation is required before accepting a
+requested period. For technician applications, validate that the job is open,
+the applicant has an active technician profile, and each proposed service is
+offered by that profile. The job owner reviews applications and can accept one
+proposal. Persist job/application status and return it to the relevant user.
+Exact transition details are described in the proposed contracts below.
+
+### Search for a professional and request service directly
+
+1. The user searches active professional profiles by service and optional
+   service area.
+2. The API returns matching profiles with their active offered services.
+3. The user selects a professional and service, enters request details, and
+   submits a direct service request.
+4. The backend validates that the profile and service are active and
+   associated, then stores a `serviceRequests` document linked to the user,
+   professional profile, and service.
+5. The user and professional can view the request and its status. This path
+   does not publish an open job or create a `jobApplications` record.
 
 ## API and error-handling guidelines
 
@@ -127,11 +149,11 @@ contracts, status values, and transition rules remain to be designed.
 
 ## Data and integration guidelines
 
-The architecture proposes MongoDB collections for users, problems,
+The architecture proposes MongoDB collections for users, problems/jobs,
 maintenance categories, DIY guides, equipment, rental requests, professional
-profiles, service requests, and maintenance records. The final schema,
-references, indexes, and retention policies must be established during
-implementation.
+profiles, services, service requests, job applications, and maintenance
+records. The final schema, references, indexes, and retention policies must be
+established during implementation.
 
 Store image references (such as a URL or storage key) in database records
 rather than image binaries when using an external image-storage service.
@@ -147,6 +169,10 @@ concurrent requests.
 - Keep feature responsibilities separate within the modular monolith.
 - Test validation, authorization, and failure paths as well as successful
   requests.
+- Test job listing visibility, technician eligibility, proposal service
+  membership, and owner-only application review.
+- Test competing application acceptance to ensure only one proposal can be
+  accepted for a job.
 - Test rental availability with overlapping and concurrent requests.
 - Keep external services behind backend integrations so they can be disabled
   or tested independently.
@@ -170,21 +196,92 @@ model.
 | Class | Key attributes | Key methods / responsibility |
 | --- | --- | --- |
 | `User` | `id`, `name`, `email`, `passwordHash`, `role`, `createdAt`, `updatedAt` | `verifyPassword(password)`, `can(action, resource)`; represents an account and its access role. Never return `passwordHash` to clients. |
-| `ProblemReport` | `id`, `reporterId`, `location`, `categoryId`, `description`, `photoKeys[]`, `status`, `createdAt`, `updatedAt` | `validate()`, `addPhoto(key)`, `changeStatus(status)`; records a household problem. |
+| `JobPosting` | `id`, `reporterId`, `location`, `categoryId`, `description`, `photoKeys[]`, `status`, `assignedTechnicianProfileId?`, `createdAt`, `updatedAt` | `validate()`, `addPhoto(key)`, `publish()`, `assignTechnician(profileId)`; stored in `problems`; an open posting is visible to technicians. |
 | `MaintenanceCategory` | `id`, `name`, `description`, `parentId?` | `validate()`; classifies problems and guides. |
 | `DiyGuide` | `id`, `categoryId`, `title`, `summary`, `steps[]`, `safetyNotes[]`, `published`, `updatedAt` | `validate()`, `isApplicableTo(categoryId)`; provides reviewed repair instructions. |
 | `Equipment` | `id`, `ownerId`, `name`, `description`, `categoryId`, `pricePerDay?`, `active`, `createdAt`, `updatedAt` | `validate()`, `isAvailable(from, to)`; describes an item that may be rented. Availability must be checked against accepted requests by the server. |
 | `RentalRequest` | `id`, `renterId`, `equipmentId`, `startAt`, `endAt`, `status`, `createdAt`, `updatedAt` | `validatePeriod()`, `canTransitionTo(status)`, `overlaps(from, to)`; records a rental request. Statuses are **Confirm**. |
-| `ProfessionalProfile` | `id`, `userId`, `displayName`, `serviceIds[]`, `description`, `active`, `createdAt`, `updatedAt` | `offers(serviceId)`, `validate()`; describes a professional and services offered. |
-| `ServiceRequest` | `id`, `customerId`, `professionalId`, `serviceId`, `problemId?`, `requestedAt?`, `details`, `status`, `createdAt`, `updatedAt` | `validate()`, `canTransitionTo(status)`; records a request for professional assistance. |
+| `ProfessionalProfile` | `id`, `userId`, `displayName`, `serviceIds[]`, `description`, `active`, `createdAt`, `updatedAt` | `offers(serviceId)`, `validate()`; describes a technician and the services they can offer directly or propose for a job. |
+| `Service` | `id`, `name`, `description`, `active` | `validate()`; controlled service catalog referenced by technician profiles, direct requests, and applications. |
+| `ServiceRequest` | `id`, `customerId`, `professionalProfileId`, `serviceId`, `problemId?`, `details`, `status`, `requestedAt?`, `createdAt`, `updatedAt` | `validate()`, `canTransitionTo(status)`, `cancel()`; records a user's direct request to a selected professional, separate from job applications. |
+| `JobApplication` | `id`, `problemId`, `technicianProfileId`, `proposedServiceIds[]`, `proposalMessage`, `proposedPrice?`, `availabilityNote?`, `status`, `createdAt`, `updatedAt` | `validate()`, `canTransitionTo(status)`, `accept()`, `decline()`; technician application to a user's open job. |
 | `MaintenanceRecord` | `id`, `ownerId`, `problemId?`, `summary`, `completedAt`, `performedBy?`, `createdAt` | `validate()`, `isVisibleTo(user)`; records completed work and applies its access policy. |
 
-The proposed service layer may expose `ProblemService.createReport`,
-`RentalService.createRequest` / `checkAvailability`,
-`ServiceRequestService.createRequest`, and
-`MaintenanceService.createRecord`. These operations enforce business rules
-before repositories persist data. Availability checks and writes must be
-protected against concurrent conflicting requests.
+### Professional service and job marketplace class diagram
+
+This conceptual UML view shows both independent professional workflows:
+direct requests from users and technician applications to open jobs. It
+complements the field-level class table above and the MongoDB collection
+diagram below.
+
+```mermaid
+classDiagram
+    class User {
+        +ObjectId id
+        +String role
+    }
+    class JobPosting {
+        +ObjectId id
+        +ObjectId reporterId
+        +String status
+        +ObjectId assignedTechnicianProfileId
+        +publish()
+        +assignTechnician(technicianId)
+    }
+    class ProfessionalProfile {
+        +ObjectId id
+        +ObjectId userId
+        +ObjectId[] serviceIds
+        +Boolean active
+        +offers(serviceId)
+    }
+    class Service {
+        +ObjectId id
+        +String name
+        +Boolean active
+    }
+    class ServiceRequest {
+        +ObjectId id
+        +ObjectId customerId
+        +ObjectId professionalProfileId
+        +ObjectId serviceId
+        +String details
+        +String status
+        +submit()
+        +cancel()
+    }
+    class JobApplication {
+        +ObjectId id
+        +ObjectId problemId
+        +ObjectId technicianProfileId
+        +ObjectId[] proposedServiceIds
+        +String proposalMessage
+        +String status
+        +submit()
+        +accept()
+        +decline()
+    }
+    User "1" --> "0..*" JobPosting : posts
+    User "1" --> "0..1" ProfessionalProfile : has
+    User "1" --> "0..*" ServiceRequest : submits
+    ProfessionalProfile "1" --> "0..*" ServiceRequest : receives
+    Service "1" --> "0..*" ServiceRequest : requested
+    JobPosting "0..1" --> "0..*" ServiceRequest : optionally relates
+    ProfessionalProfile "0..1" --> "0..*" JobPosting : assigned to
+    JobPosting "1" --> "0..*" JobApplication : receives
+    ProfessionalProfile "1" --> "0..*" JobApplication : submits
+    ProfessionalProfile "0..*" --> "1..*" Service : offers
+    JobApplication "0..*" --> "1..*" Service : proposes
+```
+
+The proposed service layer may expose `ProblemService.createReport` /
+`publishAsJob`, `ProfessionalSearchService.search`, `ServiceRequestService.create` /
+`review`, `JobService.listOpenJobs`, `JobApplicationService.apply` /
+`review` / `accept`, `RentalService.createRequest` /
+`checkAvailability`, and `MaintenanceService.createRecord`. These operations
+enforce business rules before repositories persist data. Job acceptance and
+related status changes must be atomic so concurrent reviews cannot assign the
+same job to multiple technicians.
 
 ## Proposed MongoDB document structures
 
@@ -192,26 +289,38 @@ All documents use MongoDB `_id` as their primary identifier. Foreign keys are
 stored as ObjectId references; API responses serialize identifiers as strings.
 Unless stated otherwise, `createdAt` and `updatedAt` are server-managed dates.
 The field requirements below are a proposed MVP baseline and must be reconciled
-with product decisions before implementation.
+with product decisions before implementation. A technician account must have
+an active professional profile with at least one active service to apply.
 
 | Collection | Mandatory fields | Optional fields | Example document |
 | --- | --- | --- | --- |
-| `users` | `name`, `email`, `passwordHash`, `role`, `createdAt`, `updatedAt` | `phone`, `avatarKey` | `{ "_id": "ObjectId", "name": "Amina", "email": "amina@example.test", "passwordHash": "<hash>", "role": "homeowner", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
-| `problems` | `reporterId`, `location`, `categoryId`, `description`, `status`, `createdAt`, `updatedAt` | `photoKeys[]` | `{ "_id": "ObjectId", "reporterId": "ObjectId", "location": "kitchen", "categoryId": "ObjectId", "description": "Leaking sink", "photoKeys": [], "status": "open", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
+| `users` | `name`, `email`, `passwordHash`, `role`, `createdAt`, `updatedAt` | `phone`, `avatarKey` | `{ "_id": "ObjectId", "name": "Amina", "email": "amina@example.test", "passwordHash": "<hash>", "role": "homeowner", "createdAt": "ISODate", "updatedAt": "ISODate" }`; technician accounts use the `technician` role. |
+| `problems` (also job postings) | `reporterId`, `location`, `categoryId`, `description`, `status`, `createdAt`, `updatedAt` | `photoKeys[]`, `assignedTechnicianProfileId` | `{ "_id": "ObjectId", "reporterId": "ObjectId", "location": "kitchen", "categoryId": "ObjectId", "description": "Leaking sink", "photoKeys": [], "status": "open", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `maintenanceCategories` | `name`, `createdAt`, `updatedAt` | `description`, `parentId` | `{ "_id": "ObjectId", "name": "Plumbing", "description": "Water systems", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `diyGuides` | `categoryId`, `title`, `summary`, `steps[]`, `safetyNotes[]`, `published`, `createdAt`, `updatedAt` | `estimatedMinutes`, `requiredTools[]` | `{ "_id": "ObjectId", "categoryId": "ObjectId", "title": "Inspect a sink leak", "summary": "Basic checks", "steps": ["Turn off water", "Inspect connections"], "safetyNotes": ["Stop if electrical hazards are present"], "published": true, "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `equipment` | `ownerId`, `name`, `description`, `categoryId`, `active`, `createdAt`, `updatedAt` | `pricePerDay`, `photoKey` | `{ "_id": "ObjectId", "ownerId": "ObjectId", "name": "Pipe wrench", "description": "Adjustable wrench", "categoryId": "ObjectId", "active": true, "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `rentalRequests` | `renterId`, `equipmentId`, `startAt`, `endAt`, `status`, `createdAt`, `updatedAt` | `message`, `quotedTotal` | `{ "_id": "ObjectId", "renterId": "ObjectId", "equipmentId": "ObjectId", "startAt": "ISODate", "endAt": "ISODate", "status": "pending", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
-| `professionalProfiles` | `userId`, `displayName`, `serviceIds[]`, `description`, `active`, `createdAt`, `updatedAt` | `serviceArea`, `photoKey` | `{ "_id": "ObjectId", "userId": "ObjectId", "displayName": "Sam the Plumber", "serviceIds": ["ObjectId"], "description": "Residential plumbing", "active": true, "createdAt": "ISODate", "updatedAt": "ISODate" }` |
-| `serviceRequests` | `customerId`, `professionalId`, `serviceId`, `details`, `status`, `createdAt`, `updatedAt` | `problemId`, `requestedAt` | `{ "_id": "ObjectId", "customerId": "ObjectId", "professionalId": "ObjectId", "serviceId": "ObjectId", "details": "Please inspect a sink leak", "status": "pending", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
+| `services` | `name`, `description`, `active`, `createdAt`, `updatedAt` | `categoryId` | `{ "_id": "ObjectId", "name": "Plumbing repair", "description": "Residential plumbing work", "active": true, "createdAt": "ISODate", "updatedAt": "ISODate" }` |
+| `professionalProfiles` | `userId`, `displayName`, `serviceIds[]` (at least one active service), `description`, `active`, `createdAt`, `updatedAt` | `serviceArea`, `photoKey` | `{ "_id": "ObjectId", "userId": "ObjectId", "displayName": "Sam the Plumber", "serviceIds": ["ObjectId"], "description": "Residential plumbing", "active": true, "createdAt": "ISODate", "updatedAt": "ISODate" }` |
+| `serviceRequests` | `customerId`, `professionalProfileId`, `serviceId`, `details`, `status`, `createdAt`, `updatedAt` | `problemId`, `requestedAt` | `{ "_id": "ObjectId", "customerId": "ObjectId", "professionalProfileId": "ObjectId", "serviceId": "ObjectId", "details": "Please repair the leaking sink.", "status": "pending", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
+| `jobApplications` | `problemId`, `technicianProfileId`, `proposedServiceIds[]`, `proposalMessage`, `status`, `createdAt`, `updatedAt` | `proposedPrice`, `availabilityNote` | `{ "_id": "ObjectId", "problemId": "ObjectId", "technicianProfileId": "ObjectId", "proposedServiceIds": ["ObjectId"], "proposalMessage": "I can inspect and repair the leak.", "status": "pending", "createdAt": "ISODate", "updatedAt": "ISODate" }` |
 | `maintenanceRecords` | `ownerId`, `summary`, `completedAt`, `createdAt` | `problemId`, `performedBy` | `{ "_id": "ObjectId", "ownerId": "ObjectId", "summary": "Replaced sink washer", "completedAt": "ISODate", "createdAt": "ISODate" }` |
+
+Proposed job states are `open`, `assigned`, `completed`, and `closed`.
+Direct service-request states are proposed as `pending`, `accepted`,
+`declined`, `completed`, and `cancelled`; confirm the state transitions before
+implementation. Application states are `pending`, `accepted`, `declined`, and `withdrawn`.
+The `proposedServiceIds` array must contain at least one active service that
+belongs to the applying technician's active profile. On acceptance, update the
+selected application and job atomically, assign the technician profile to the
+job, and mark the other pending applications declined.
 
 ## MongoDB collection relationship diagram (conceptual ERD)
 
 MongoDB is document-oriented, so this diagram is a logical relationship view of
 the proposed collections, not a relational schema or a claim that MongoDB
 enforces foreign-key constraints. Lines represent ObjectId references; the
-`serviceIds` array represents references to zero or more service documents.
+`serviceIds` and `proposedServiceIds` arrays reference service documents.
 Relationships and cardinalities are proposed and must be enforced by backend
 validation.
 
@@ -227,6 +336,7 @@ erDiagram
         ObjectId reporterId FK
         ObjectId categoryId FK
         string status
+        ObjectId assignedTechnicianProfileId FK
     }
     MAINTENANCE_CATEGORY {
         ObjectId id PK
@@ -267,9 +377,19 @@ erDiagram
     SERVICE_REQUEST {
         ObjectId id PK
         ObjectId customerId FK
-        ObjectId professionalId FK
+        ObjectId professionalProfileId FK
         ObjectId serviceId FK
         ObjectId problemId FK
+        string details
+        string status
+        date requestedAt
+    }
+    JOB_APPLICATION {
+        ObjectId id PK
+        ObjectId problemId FK
+        ObjectId technicianProfileId FK
+        ObjectId[] proposedServiceIds FK
+        string proposalMessage
         string status
     }
     MAINTENANCE_RECORD {
@@ -279,7 +399,8 @@ erDiagram
         date completedAt
     }
 
-    USER ||--o{ PROBLEM : reports
+    USER ||--o{ PROBLEM : posts_job
+    PROFESSIONAL_PROFILE o|--o{ PROBLEM : assigned_to
     MAINTENANCE_CATEGORY ||--o{ PROBLEM : classifies
     MAINTENANCE_CATEGORY ||--o{ DIY_GUIDE : groups
     MAINTENANCE_CATEGORY ||--o{ EQUIPMENT : categorizes
@@ -292,21 +413,36 @@ erDiagram
     USER ||--o{ SERVICE_REQUEST : submits
     PROFESSIONAL_PROFILE ||--o{ SERVICE_REQUEST : receives
     SERVICE ||--o{ SERVICE_REQUEST : requested
-    PROBLEM o|--o{ SERVICE_REQUEST : relates_to
+    PROBLEM o|--o{ SERVICE_REQUEST : optionally_relates
+    PROBLEM ||--o{ JOB_APPLICATION : receives
+    PROFESSIONAL_PROFILE ||--o{ JOB_APPLICATION : submits
+    SERVICE }o--|{ JOB_APPLICATION : proposed_in
     USER ||--o{ MAINTENANCE_RECORD : owns
     PROBLEM o|--o{ MAINTENANCE_RECORD : documents
 ```
 
-`SERVICE` is included as the referenced service catalog implied by
-`serviceIds` and `serviceId`; its fields and lifecycle still need confirmation.
-Optional references (such as a problem link on a service request) may be absent
-from a document. Exact one-to-one rules, deletion behavior, and any embedded
-versus referenced data decisions are implementation decisions.
+`PROBLEM` is also the job posting: records with `status: "open"` appear in the
+technician job board. `JOB_APPLICATION` stores each technician's proposal and
+references the selected services from `SERVICE`. Independently,
+`SERVICE_REQUEST` stores a user's request to a selected professional and
+references the customer, professional profile, and service; its `problemId`
+may be absent. Accepting an application sets the job's
+`assignedTechnicianProfileId`; status updates must be applied atomically.
+Optional references may be absent from a document.
+Exact one-to-one rules, deletion behavior, and any embedded versus referenced
+data decisions are implementation decisions.
 
 Email addresses should have a uniqueness constraint. Add indexes for fields
 used to look up ownership and references (for example `reporterId`,
-`equipmentId`, `professionalId`, and `categoryId`). The final indexing strategy,
-retention rules, role values, and request status values remain design decisions.
+`assignedTechnicianProfileId`, `equipmentId`, `technicianProfileId`,
+`professionalProfileId`, `customerId`, `problemId`, `categoryId`, and
+application `status`). A compound index on job status and
+category/location can support available-job browsing. Consider a unique
+compound index on `(problemId, technicianProfileId)` to prevent duplicate
+applications by the same technician, if one application per technician per job
+is the approved rule. The final indexing strategy, retention rules, role
+values, and rental, direct-request, and job/application status transitions
+remain design decisions.
 Do not persist image binaries in these documents; store a storage key or
 equivalent reference if photo upload is enabled.
 
@@ -316,7 +452,37 @@ The following diagrams show planned interactions. Error paths are represented
 at a high level; exact status codes and response schemas are specified in the
 API section below.
 
-### Submit a problem report
+### Search and request a professional directly
+
+```mermaid
+sequenceDiagram
+    actor Homeowner
+    participant UI as React UI
+    participant API as Express API
+    participant Auth as Auth and validation middleware
+    participant Professionals as Professional service
+    participant DB as MongoDB
+
+    Homeowner->>UI: Search by service and optional service area
+    UI->>API: GET /api/professionals?serviceId={id}
+    API->>Professionals: Search active profiles and services
+    Professionals->>DB: Query matching profiles and active services
+    DB-->>Professionals: Matching profiles
+    Professionals-->>API: Professional search results
+    API-->>UI: 200 with matching professionals
+    Homeowner->>UI: Select a professional and submit request details
+    UI->>API: POST /api/service-requests
+    API->>Auth: Authenticate and validate request
+    Auth-->>API: Request is valid
+    API->>Professionals: Create direct service request
+    Professionals->>DB: Verify active profile/service and insert request
+    DB-->>Professionals: Created service request
+    Professionals-->>API: Pending service request
+    API-->>UI: 201 Created with JSON request
+    UI-->>Homeowner: Show request status
+```
+
+### Publish a job for technician applications
 
 ```mermaid
 sequenceDiagram
@@ -327,16 +493,16 @@ sequenceDiagram
     participant Problems as Problem service
     participant DB as MongoDB
 
-    Homeowner->>UI: Enter location, category, description
-    UI->>API: POST /api/problems
+    Homeowner->>UI: Enter problem details and publish as job
+    UI->>API: POST /api/jobs
     API->>Auth: Validate payload and access
     Auth-->>API: Request is valid
-    API->>Problems: Create report
-    Problems->>DB: Insert problem document
+    API->>Problems: Create open job
+    Problems->>DB: Insert problem/job document
     DB-->>Problems: New document and identifier
     Problems-->>API: Created report
     API-->>UI: 201 Created with JSON report
-    UI-->>Homeowner: Show confirmation and assessment options
+    UI-->>Homeowner: Show published job
 ```
 
 ### Request equipment rental
@@ -370,32 +536,61 @@ sequenceDiagram
     end
 ```
 
-### Request professional assistance
+### Technician applies and homeowner accepts a proposal
 
 ```mermaid
 sequenceDiagram
     actor Homeowner
+    actor Technician
     participant UI as React UI
     participant API as Express API
     participant Auth as Auth and validation middleware
-    participant Services as Service request module
+    participant Jobs as Job application service
     participant DB as MongoDB
     participant Mail as Optional email provider
 
-    Homeowner->>UI: Select professional and describe work
-    UI->>API: POST /api/service-requests
-    API->>Auth: Authenticate and validate request
+    Technician->>UI: Open available jobs
+    UI->>API: GET /api/jobs?status=open
+    API->>Auth: Verify technician access
+    Auth-->>API: Technician is authorized
+    API->>Jobs: List open jobs
+    Jobs->>DB: Query open problem/job documents
+    DB-->>Jobs: Available jobs
+    Jobs-->>API: Job list
+    API-->>UI: 200 with open jobs
+    Technician->>UI: Select services and submit proposal
+    UI->>API: POST /api/jobs/{jobId}/applications
+    API->>Auth: Validate technician profile and job
     Auth-->>API: Request is valid
-    API->>Services: Create service request
-    Services->>DB: Verify profile and insert request
-    DB-->>Services: Created request
-    Services-->>API: Pending request
+    API->>Jobs: Create application
+    Jobs->>DB: Verify job open and services offered, then insert application
+    DB-->>Jobs: Pending application
+    Jobs-->>API: Application created
+    API-->>UI: 201 with application
+    Homeowner->>UI: Open application list
+    UI->>API: GET /api/jobs/{jobId}/applications
+    API->>Auth: Verify job ownership
+    Auth-->>API: Owner is authorized
+    API->>Jobs: List applications for job
+    Jobs->>DB: Query applications and technician/service details
+    DB-->>Jobs: Application list
+    Jobs-->>API: Application list
+    API-->>UI: 200 with applications
+    Homeowner->>UI: Review applications and accept one
+    UI->>API: PATCH /api/job-applications/{applicationId}
+    API->>Auth: Verify job ownership
+    Auth-->>API: Owner is authorized
+    API->>Jobs: Accept proposal
+    Jobs->>DB: Atomically accept application and assign job
+    DB-->>Jobs: Job assigned and other pending applications declined
+    Jobs-->>API: Updated job and application
     opt Email notifications are enabled
-        API->>Mail: Send request update
+        API->>Mail: Notify homeowner and technician
         Mail-->>API: Delivery result
     end
-    API-->>UI: 201 Created with JSON request
-    UI-->>Homeowner: Show request status
+    API-->>UI: 200 with updated application
+    UI-->>Homeowner: Show assigned technician
+    UI-->>Technician: Show accepted proposal
 ```
 
 ## Internal API
@@ -410,13 +605,21 @@ responses. Protected routes require the agreed authentication mechanism; the
 | --- | --- | --- | --- |
 | `POST /api/auth/register` | Public | JSON: `{ "name", "email", "password" }` | `201`: `{ "data": { "id", "name", "email", "role" } }` |
 | `POST /api/auth/login` | Public | JSON: `{ "email", "password" }` | `200`: `{ "data": { "accessToken", "user": { "id", "name", "email", "role" } } }`; token design **Confirm**. |
-| `POST /api/problems` | Access policy **Confirm** | JSON: `{ "location", "categoryId", "description" }`; if photo upload is enabled, use multipart form data with a `photo` file field and the same text fields | `201`: `{ "data": { "id", "location", "categoryId", "description", "photoKeys", "status", "createdAt" } }`; storage references are assigned by the backend. |
-| `GET /api/problems/:problemId` | Owner/access policy **Confirm** | Path parameter `problemId` | `200`: `{ "data": { "id", "location", "categoryId", "description", "photoKeys", "status", "createdAt" } }` |
+| `POST /api/jobs` | Authenticated user | JSON: `{ "location", "categoryId", "description" }`; if photo upload is enabled, use multipart form data with a `photo` file field and the same text fields | `201`: `{ "data": { "id", "reporterId", "location", "categoryId", "description", "photoKeys", "status": "open", "createdAt" } }`; storage references are assigned by the backend. |
+| `GET /api/professionals?serviceId={id}&serviceArea={value}` | Authenticated or public/read policy **Confirm** | Optional service and service-area query filters; only active profiles and services are returned | `200`: `{ "data": [{ "id", "displayName", "description", "serviceArea"?, "services": [{ "id", "name" }] }] }` |
+| `POST /api/service-requests` | Authenticated user | JSON: `{ "professionalProfileId", "serviceId", "problemId"?, "details", "requestedAt"? }` | `201`: `{ "data": { "id", "customerId", "professionalProfileId", "serviceId", "problemId"?, "details", "status": "pending", "createdAt" } }`; profile and service must be active and associated. |
+| `GET /api/service-requests` | Authenticated; scope to customer or professional | Optional `status` filter | `200`: `{ "data": [{ "id", "customerId", "professionalProfileId", "serviceId", "details", "status", "createdAt" }] }` |
+| `PATCH /api/service-requests/:serviceRequestId` | Requesting customer or addressed professional; allowed action is role-dependent | JSON: `{ "decision": "accept" }`, `{ "decision": "decline" }`, or `{ "decision": "cancel" }` | `200`: `{ "data": { "id", "status", "updatedAt" } }`; permitted transitions and cancellation policy must be confirmed. |
+| `GET /api/jobs?status=open&categoryId={id}&location={value}` | Authenticated technician | Optional query filters; only open jobs are returned | `200`: `{ "data": [{ "id", "location", "categoryId", "description", "createdAt" }] }` |
+| `GET /api/jobs/:jobId` | Authenticated user or technician; access policy enforced | Path parameter `jobId` | `200`: `{ "data": { "id", "reporterId", "location", "categoryId", "description", "photoKeys", "status", "assignedTechnicianProfileId"?, "createdAt" } }` |
+| `GET /api/jobs/:jobId/applications` | Job owner | Path parameter `jobId` | `200`: `{ "data": [{ "id", "technicianProfile", "proposedServices", "proposalMessage", "proposedPrice"?, "availabilityNote"?, "status" }] }` |
+| `POST /api/jobs/:jobId/applications` | Authenticated technician with active profile | JSON: `{ "proposedServiceIds": ["id"], "proposalMessage": "...", "proposedPrice"?, "availabilityNote"? }` | `201`: `{ "data": { "id", "jobId", "technicianProfileId", "proposedServiceIds", "proposalMessage", "status": "pending", "createdAt" } }`; closed jobs or invalid services rejected. |
+| `PATCH /api/job-applications/:applicationId` | Owner of associated job | JSON: `{ "decision": "accept" }` or `{ "decision": "decline" }` | `200`: `{ "data": { "id", "jobId", "status", "jobStatus", "assignedTechnicianProfileId" } }`; conflicts return `409`. |
+| `GET /api/technicians/me/applications` | Authenticated technician | Optional status filter | `200`: `{ "data": [{ "id", "jobId", "proposalMessage", "status", "createdAt" }] }` |
 | `GET /api/guides?categoryId={id}` | Public/read policy **Confirm** | Optional query parameter `categoryId` | `200`: `{ "data": [{ "id", "categoryId", "title", "summary", "steps", "safetyNotes" }] }` |
 | `GET /api/equipment?categoryId={id}&startAt={date}&endAt={date}` | Public/read policy **Confirm** | Optional query parameters; ISO-8601 dates when availability filtering is requested | `200`: `{ "data": [{ "id", "name", "description", "categoryId", "active" }] }` |
 | `POST /api/rental-requests` | Authenticated | JSON: `{ "equipmentId", "startAt", "endAt", "message"? }` | `201`: `{ "data": { "id", "equipmentId", "startAt", "endAt", "status", "createdAt" } }`; unavailable period returns `409`. |
-| `GET /api/professionals?serviceId={id}` | Public/read policy **Confirm** | Optional query parameter `serviceId` | `200`: `{ "data": [{ "id", "displayName", "serviceIds", "description", "serviceArea"? }] }` |
-| `POST /api/service-requests` | Authenticated | JSON: `{ "professionalId", "serviceId", "problemId"?, "requestedAt"?, "details" }` | `201`: `{ "data": { "id", "professionalId", "serviceId", "status", "createdAt" } }` |
+| `GET /api/services` | Authenticated or public/read policy **Confirm** | Optional category filter | `200`: `{ "data": [{ "id", "name", "description" }] }` |
 | `POST /api/maintenance-records` | Authenticated | JSON: `{ "problemId"?, "summary", "completedAt", "performedBy"? }` | `201`: `{ "data": { "id", "problemId"?, "summary", "completedAt", "createdAt" } }` |
 | `GET /api/maintenance-records` | Authenticated; owner scoping required | Optional query parameters to be defined | `200`: `{ "data": [{ "id", "problemId"?, "summary", "completedAt" }] }` |
 
@@ -450,7 +653,7 @@ or confirmed selections:
 | Integration | Need and selection rationale | Status / boundary |
 | --- | --- | --- |
 | Image/object storage API | Store problem photos without placing image binaries in MongoDB. Select a provider that supports private objects, access controls, secure upload/download, and acceptable cost and retention controls. | Optional; provider and upload flow **Confirm**. The backend mediates access and stores only an object key or safe reference. |
-| Email delivery API | Notify users about rental or professional-service request updates. Select a provider with delivery reporting, secure credentials, and suitable operational cost. | Optional; provider and notification events **Confirm**. Invoke from backend only. |
+| Email delivery API | Notify users and technicians about rental requests, direct service requests, job applications, and assignment decisions. Select a provider with delivery reporting, secure credentials, and suitable operational cost. | Optional; provider and notification events **Confirm**. Invoke from backend only. |
 
 There is no payment, maps, AI, or third-party authentication API specified for
 the MVP. Do not add a provider or claim an integration is in use until it has
@@ -487,7 +690,7 @@ or configure these tools.
 | Integration | Test Express routes against a test database, including error responses and access controls. | Jest with an isolated MongoDB test instance |
 | API/manual | Exercise request and response contracts and critical workflows. | Postman |
 | UI | Test form validation, navigation, loading/error states, and user-visible outcomes. | React Testing Library with Jest |
-| End-to-end | Verify problem reporting, rental request, and professional request through the browser and API. | Browser automation tool to be selected |
+| End-to-end | Verify direct professional search/requests, job publication, technician browsing/application, owner acceptance, and rental requests through the browser and API. | Browser automation tool to be selected |
 
 Prioritize invalid-input, unauthorized-access, and failure-path tests as well as
 happy paths. Include tests for overlapping and concurrent rental periods to

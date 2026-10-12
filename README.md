@@ -2,8 +2,11 @@
 
 HomeMaintain is a proposed web application for helping people resolve household
 maintenance problems. A user identifies a problem, explores possible solutions,
-and can choose a DIY repair, equipment rental, or professional assistance. The
-application is also intended to support a record of completed maintenance.
+and can choose a DIY repair, equipment rental, search available technicians and
+request a service directly, or post an open job for technicians to review.
+Technicians can browse available jobs, apply, and propose the services they can
+provide. The application is also intended to support a record of completed
+maintenance.
 
 ## Project status
 
@@ -29,8 +32,12 @@ services describe the planned MVP unless explicitly stated otherwise.
 
 1. Identify and describe a household maintenance problem.
 2. Review relevant assessment information and available solutions.
-3. Choose a DIY guide, request equipment, or contact a professional.
-4. Record completed maintenance activity.
+3. Choose a DIY guide, request equipment, search for a technician and send a
+   direct service request, or post the problem as an open job.
+4. Technicians browse open jobs and submit applications with proposed services.
+5. The job owner reviews applications and accepts a proposal, while direct
+   service requests follow their own status workflow.
+6. Record completed maintenance activity.
 
 ## Planned technology
 
