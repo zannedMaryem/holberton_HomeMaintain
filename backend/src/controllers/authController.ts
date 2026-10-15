@@ -79,6 +79,16 @@ export const register = async (
       });
       return;
     }
+    
+    // Check whether email already exists
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      res.status(409).json({
+        message: "A user with this email already exists",
+      });
+      return;
+    }
 
     // Validate password complexity
     if (!passwordRegex.test(password)) {
@@ -88,13 +98,10 @@ export const register = async (
       });
       return;
     }
-
-    // Check whether email already exists
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-      res.status(409).json({
-        message: "A user with this email already exists",
+    if ( password.length > 72) {
+      res.status(400).json({
+        message:
+          "Password too long, must be under 72 characters",
       });
       return;
     }
