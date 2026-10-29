@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import bcrypt from "bcryptjs";
 
 export interface IUser extends Document {
   firstName: string;
@@ -8,6 +9,8 @@ export interface IUser extends Document {
   role: "homeowner" | "technician" | "equipment_owner" | "admin";
   createdAt: Date;
   updatedAt: Date;
+
+  comparePassword(password: string): Promise<boolean>;
 }
 
 const userSchema = new Schema<IUser>(
@@ -44,7 +47,7 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: [true, "Password is required"],
       minlength: [8, "Password must contain at least 8 characters"],
-      maxlength: [72, "Last name cannot exceed 50 characters"],
+      maxlength: [72, "Password cannot exceed 72 characters"],
     },
 
     role: {
@@ -60,6 +63,16 @@ const userSchema = new Schema<IUser>(
     timestamps: true,
   }
 );
+
+/*
+ * Compare a plain-text password with the hashed password
+ * stored in the database.
+ */
+userSchema.methods.comparePassword = async function (
+  password: string
+): Promise<boolean> {
+  return bcrypt.compare(password, this.password);
+};
 
 const User = mongoose.model<IUser>("User", userSchema);
 
