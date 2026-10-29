@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import User from "../models/User";
 import { registerUser, loginUser } from "../services/authService";
+import { domainCanReceiveEmail } from "../services/emailValidation";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -81,6 +82,10 @@ export const register = async (
       res.status(400).json({
         message: "Please provide a valid email address",
       });
+      return;
+    }
+    if (!(await domainCanReceiveEmail(email))) {
+      res.status(400).json({ message: "Email domain cannot receive email" });
       return;
     }
 

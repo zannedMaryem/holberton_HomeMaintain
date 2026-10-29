@@ -5,6 +5,8 @@ import {
     updateUserPassword,
     deleteUserAccount } from "../services/userService";
 
+import { domainCanReceiveEmail } from "../services/emailValidation";
+
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const passwordRegex =
@@ -109,6 +111,11 @@ export const updateEmail = async (
 
         if (!emailRegex.test(email)) {
             res.status(400).json({message: "Please provide a valid email address",});
+            return;
+        }
+
+        if (!(await domainCanReceiveEmail(email))) {
+            res.status(400).json({ message: "Email domain cannot receive email" });
             return;
         }
 
