@@ -1,6 +1,7 @@
 import express from "express";
 import authRoutes from "./routes/authRoutes";
-import userRoutes from "./routes/userRoutes"
+import userRoutes from "./routes/userRoutes";
+import adminUserRoutes from "./routes/adminUserRoutes";
 
 const app = express();
 
@@ -21,5 +22,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/admin/users", adminUserRoutes);
+
 
 export default app;
