@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import User from "../models/User";
 
+
 const updateUserProfile = async (
   userId: string,
   firstName?: string,
@@ -87,66 +88,11 @@ const deleteUserAccount = async (userId: string) => {
 
   await User.findByIdAndDelete(userId);
 };
-// Admin services
-const getAllUsers = async () => {
-  return User.find().select("-password").sort({ createdAt: -1 });
-};
-
-const getUserById = async (userId: string) => {
-  const user = await User.findById(userId).select("-password");
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  return user;
-};
-
-const updateUserByAdmin = async (
-  userId: string,
-  updates: {
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    role?: "homeowner" | "technician" | "equipment_owner" | "admin";
-  },
-) => {
-  const user = await User.findByIdAndUpdate(
-    userId,
-    {
-      $set: updates,
-    },
-    {
-      new: true,
-      runValidators: true,
-    },
-  ).select("-password");
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  return user;
-};
-
-const deleteUserByAdmin = async (userId: string) => {
-  const user = await User.findByIdAndDelete(userId);
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-};
 
 export {
-  // User functions
+
   updateUserProfile,
   updateUserPassword,
   updateUserEmail,
   deleteUserAccount,
-
-  // Admin functions
-  getAllUsers,
-  getUserById,
-  updateUserByAdmin,
-  deleteUserByAdmin,
 };

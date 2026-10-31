@@ -4,7 +4,9 @@ import {
   getUserById,
   updateUserByAdmin,
   deleteUserByAdmin,
-} from "../services/userService";
+} from "../services/adminService";
+
+import { domainCanReceiveEmail } from "../services/emailValidation";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -15,7 +17,13 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
     const users = await getAllUsers();
 
     res.status(200).json({
-      users,
+      message: "List of all users: ",
+      users: users.map((user) => ({
+        id: user._id,
+        fullname: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+      })),
     });
   } catch (error) {
     console.error("Get users error:", error);
@@ -34,7 +42,12 @@ export const getUser = async (
     const user = await getUserById(req.params.id);
 
     res.status(200).json({
-      user,
+      user: {
+        id: user._id,
+        fullname: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "User not found") {
@@ -112,13 +125,25 @@ export const updateUser = async (
 
     // Validate email
     if (email !== undefined) {
-      if (
-        typeof email !== "string" ||
-        !emailRegex.test(email.trim().toLowerCase())
-      ) {
-        res.status(400).json({
-          message: "Please provide a valid email address",
-        });
+      if (typeof email !== "string") {
+        res
+          .status(400)
+          .json({ message: "Please provide a valid email address" });
+        return;
+      }
+
+      // Normalize before checking or saving so casing/extra spaces don't create duplicates.
+      const trimmedEmail = email.trim().toLowerCase();
+
+      if (!emailRegex.test(trimmedEmail)) {
+        res
+          .status(400)
+          .json({ message: "Please provide a valid email address" });
+        return;
+      }
+
+      if (!(await domainCanReceiveEmail(trimmedEmail))) {
+        res.status(400).json({ message: "Email domain cannot receive email" });
         return;
       }
     }
@@ -156,12 +181,53 @@ export const updateUser = async (
 
     res.status(200).json({
       message: "User updated successfully",
-      user,
+      user: {
+        id: user._id,
+        fullname: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "User not found") {
       res.status(404).json({
         message: error.message,
+      });
+      return;
+    }
+
+    if (error instanceof Error && error.message === "Email is unchanged") {
+      res.status(409).json({
+        message: error.message,
+      });
+      return;
+    }
+
+    if (error instanceof Error && error.message === "Email already used") {
+      res.status(409).json({
+        message: "A user with this email already exists",
+      });
+      return;
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === "Please provide a valid email address"
+    ) {
+      res.status(400).json({
+        message: error.message,
+      });
+      return;
+    }
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === 11000
+    ) {
+      res.status(409).json({
+        message: "A user with this email already exists",
       });
       return;
     }
@@ -192,7 +258,7 @@ export const deleteUser = async (
 
     await deleteUserByAdmin(req.params.id);
 
-    res.status(204).send();
+    res.status(204).json({ message: "User deleted successfully" });
   } catch (error) {
     if (error instanceof Error && error.message === "User not found") {
       res.status(404).json({
@@ -209,3 +275,5 @@ export const deleteUser = async (
   }
 };
 //TODO: Test admin routes
+// ! No error message shown when passing regular token in admin access
+// ! For security purposes should the error meaasge not be : A user with this email already exists
