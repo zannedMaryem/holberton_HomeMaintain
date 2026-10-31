@@ -10,7 +10,7 @@ import { domainCanReceiveEmail } from "../services/emailValidation";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const validRoles = ["homeowner", "technician", "equipment_owner", "admin"];
+const validRoles = ["homeowner", "technician", "admin"];
 
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {

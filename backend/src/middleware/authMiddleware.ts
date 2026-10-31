@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 
 interface JwtPayload {
   userId: string;
-  role: "homeowner" | "technician" | "equipment_owner" | "admin";
+  role: "homeowner" | "technician" | "admin";
 }
 
 export const authenticate = (
