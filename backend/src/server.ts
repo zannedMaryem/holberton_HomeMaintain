@@ -6,8 +6,8 @@ dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 
-connectDB();
-
-app.listen(PORT, () => {
-  console.log(`HomeMaintain API running on port ${PORT}`);
+void connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`HomeMaintain API running on port ${PORT}`);
+  });
 });

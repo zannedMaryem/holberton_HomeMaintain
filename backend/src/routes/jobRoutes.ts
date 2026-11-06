@@ -1,6 +1,6 @@
 import { Router } from "express";
 import mongoose from "mongoose";
-import { listOpenJobs, postJob, updateOpenJob, deleteOpenJob } from "../controllers/jobController";
+import { listOpenJobs, postJob, updateOpenJob, deleteOpenJob, getJob } from "../controllers/jobController";
 import { authenticate } from "../middleware/authMiddleware";
 import { authorize } from "../middleware/roleMiddleware";
 
@@ -16,6 +16,7 @@ router.param("jobId", (_req, res, next, jobId) => {
 });
 
 router.get("/", authenticate, authorize("technician"), listOpenJobs);
+router.get("/:jobId", authenticate, authorize("admin", "homeowner", "technician"), getJob);
 router.post("/", authenticate, authorize("homeowner"), postJob);
 router.patch("/:jobId", authenticate, authorize("homeowner"), updateOpenJob);
 router.delete("/:jobId", authenticate, authorize("homeowner"), deleteOpenJob);

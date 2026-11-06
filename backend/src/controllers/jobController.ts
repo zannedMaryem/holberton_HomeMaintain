@@ -1,21 +1,26 @@
 import { Request, Response } from "express";
-import { createJob, getOpenJobs, updateJob, deleteJob } from "../services/jobService";
+import mongoose from "mongoose";
+import { createJob, getOpenJobs, updateJob, deleteJob, getJobById } from "../services/jobService";
+import { getActiveJobCategory } from "../services/jobCategoryService";
+import {
+  isTunisiaGovernorateId,
+  type TunisiaGovernorateId,
+} from "../constants/tunisiaGovernorates";
 
 const fieldMaxLimits = {
   title: 72,
   location: 200,
-  category: 100,
   description: 2000,
 };
 
 const fieldMinLimits = {
   title: 8,
   location: 2,
-  category: 2,
   description: 2,
 };
 
-type JobTextField = keyof typeof fieldMaxLimits;
+type JobTextField = "title" | "location" | "description";
+type JobEditableField = JobTextField | "categoryId" | "governorateId";
 
 const validateJobText = (
   value: unknown,
@@ -58,14 +63,36 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   }
 
   const jobBody = body as Record<string, unknown>;
+  const allowedFields = [
+    "title",
+    "location",
+    "governorateId",
+    "categoryId",
+    "description",
+  ];
+  if (Object.keys(jobBody).some((field) => !allowedFields.includes(field))) {
+    res.status(400).json({ message: "The request contains an unsupported field" });
+    return;
+  }
+
   const title = validateJobText(jobBody.title, "title", res);
   if (title === undefined) return;
 
   const location = validateJobText(jobBody.location, "location", res);
   if (location === undefined) return;
 
-  const category = validateJobText(jobBody.category, "category", res);
-  if (category === undefined) return;
+  if (!isTunisiaGovernorateId(jobBody.governorateId)) {
+    res.status(400).json({ message: "A valid governorateId is required" });
+    return;
+  }
+
+  if (
+    typeof jobBody.categoryId !== "string" ||
+    !mongoose.isObjectIdOrHexString(jobBody.categoryId)
+  ) {
+    res.status(400).json({ message: "A valid categoryId is required" });
+    return;
+  }
 
   const description = validateJobText(jobBody.description, "description", res);
   if (description === undefined) return;
@@ -80,7 +107,8 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
       reporterId: req.user.id,
       title,
       location,
-      category,
+      governorateId: jobBody.governorateId,
+      categoryId: jobBody.categoryId,
       description,
     });
 
@@ -91,7 +119,8 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
         reporterId: job.reporterId,
         title: job.title,
         location: job.location,
-        category: job.category,
+        governorateId: job.governorateId,
+        categoryId: job.categoryId,
         description: job.description,
         status: job.status,
         createdAt: job.createdAt,
@@ -102,9 +131,14 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
     if (
       error instanceof Error &&
       error.message ===
-        "Job with the same details alredy listed in your account"
+        "Job with the same details already listed in your account"
     ) {
-      res.status(400).json({message: error.message});
+      res.status(409).json({ message: error.message });
+      return;
+    }
+
+    if (error instanceof Error && error.message === "Job category not found") {
+      res.status(400).json({ message: error.message });
       return;
     }
       res.status(500).json({ message: "Server error" });
@@ -123,18 +157,27 @@ export const updateOpenJob = async (
     return;
   }
 
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+
   const jobBody = body as Record<string, unknown>;
-  const updates: Partial<Record<JobTextField, string>> = {};
+  const updates: Partial<Record<JobTextField, string>> & {
+    categoryId?: mongoose.Types.ObjectId;
+    governorateId?: TunisiaGovernorateId;
+  } = {};
   const allowedFields = [
     "title",
     "location",
-    "category",
+    "governorateId",
     "description",
+    "categoryId",
   ] as const;
 
   if (
     Object.keys(jobBody).some(
-      (field) => !allowedFields.includes(field as JobTextField),
+      (field) => !allowedFields.includes(field as JobEditableField),
     )
   ) {
     res.status(400).json({
@@ -145,6 +188,42 @@ export const updateOpenJob = async (
 
   for (const field of allowedFields) {
     if (jobBody[field] === undefined) continue;
+
+    if (field === "categoryId") {
+      if (
+        typeof jobBody.categoryId !== "string" ||
+        !mongoose.isObjectIdOrHexString(jobBody.categoryId)
+      ) {
+        res.status(400).json({ message: "A valid categoryId is required" });
+        return;
+      }
+
+      try {
+        await getActiveJobCategory(jobBody.categoryId);
+      } catch (error) {
+        if (error instanceof Error && error.message === "Job category not found") {
+          res.status(400).json({ message: error.message });
+          return;
+        }
+
+        console.error("Validate job category error:", error);
+        res.status(500).json({ message: "Server error" });
+        return;
+      }
+
+      updates.categoryId = new mongoose.Types.ObjectId(jobBody.categoryId);
+      continue;
+    }
+
+    if (field === "governorateId") {
+      if (!isTunisiaGovernorateId(jobBody.governorateId)) {
+        res.status(400).json({ message: "A valid governorateId is required" });
+        return;
+      }
+
+      updates.governorateId = jobBody.governorateId;
+      continue;
+    }
 
     const value = validateJobText(jobBody[field], field, res);
     if (value === undefined) return; // ! validateJobText already sent a 400
@@ -157,11 +236,6 @@ export const updateOpenJob = async (
     return;
   }
 
-  if (!req.user) {
-    res.status(401).json({ message: "Authentication required" });
-    return;
-  }
-
   try {
     const job = await updateJob(req.params.jobId, req.user.id, updates);
 
@@ -171,7 +245,8 @@ export const updateOpenJob = async (
         id: job._id,
         title: job.title,
         location: job.location,
-        category: job.category,
+        governorateId: job.governorateId,
+        categoryId: job.categoryId,
         description: job.description,
         status: job.status,
       },
@@ -205,19 +280,97 @@ export const listOpenJobs = async (
     res.status(400).json({ message: "Only open jobs can be listed" });
     return;
   }
+  // ! pagination
+  // Reject malformed page values, but cap oversized limits to protect the DB.
+  const page = parsePositiveInteger(req.query.page, 1, "page", res);
+  if (page === undefined) return;
+
+  const requestedLimit = parsePositiveInteger(req.query.limit, 20, "limit", res);
+  if (requestedLimit === undefined) return;
+  const limit = Math.min(requestedLimit, 100);
+  if (!Number.isSafeInteger((page - 1) * limit)) {
+    res.status(400).json({ message: "page is too large" });
+    return;
+  }
+
+  let categoryId: string | undefined;
+  if (req.query.categoryId !== undefined) {
+    if (
+      typeof req.query.categoryId !== "string" ||
+      !mongoose.isObjectIdOrHexString(req.query.categoryId)
+    ) {
+      res.status(400).json({ message: "categoryId must be a valid ObjectId" });
+      return;
+    }
+
+    try {
+      await getActiveJobCategory(req.query.categoryId);
+      categoryId = req.query.categoryId;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Job category not found") {
+        res.status(400).json({ message: error.message });
+        return;
+      }
+
+      console.error("Validate job category filter error:", error);
+      res.status(500).json({ message: "Server error" });
+      return;
+    }
+  }
+
+  let governorateId: TunisiaGovernorateId | undefined;
+  if (req.query.governorateId !== undefined) {
+    if (!isTunisiaGovernorateId(req.query.governorateId)) {
+      res.status(400).json({ message: "governorateId is not supported" });
+      return;
+    }
+
+    governorateId = req.query.governorateId;
+  }
+
+  let location: string | undefined;
+  if (req.query.location !== undefined) {
+    if (
+      typeof req.query.location !== "string" ||
+      req.query.location.trim().length < 2 ||
+      req.query.location.trim().length > 200
+    ) {
+      res.status(400).json({
+        message: "location filter must contain between 2 and 200 characters",
+      });
+      return;
+    }
+
+    location = req.query.location.trim();
+  }
 
   try {
-    const jobs = await getOpenJobs();
+    const { jobs, total } = await getOpenJobs({
+      page,
+      limit,
+      categoryId,
+      governorateId,
+      location,
+    });
 
     res.status(200).json({
       data: jobs.map((job) => ({
         id: job._id,
         title: job.title,
         location: job.location,
-        category: job.category,
+        governorateId: job.governorateId,
+        categoryId: job.categoryId,
         description: job.description,
         createdAt: job.createdAt,
       })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPreviousPage: page > 1,
+      },
     });
   } catch (error) {
     console.error("List open jobs error:", error);
@@ -225,7 +378,71 @@ export const listOpenJobs = async (
   }
 };
 
+const parsePositiveInteger = (
+    value: unknown,
+    defaultValue: number,
+    field: "page" | "limit",
+    res: Response,
+): number | undefined => {
+    if (value === undefined) return defaultValue;
 
+    if (
+      typeof value !== "string" ||
+      !/^[1-9]\d*$/.test(value) ||
+      !Number.isSafeInteger(Number(value))
+    ) {
+      res.status(400).json({ message: `${field} must be a positive integer` });
+      return undefined;
+    }
+
+    return Number(value);
+};
+
+export const getJob = async (
+  req: Request<{ jobId: string }>,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+
+  try {
+    const job = await getJobById(
+      req.params.jobId,
+      req.user.id,
+      req.user.role,
+    );
+
+    res.status(200).json({
+      message: "Job retrieved successfully",
+      data: {
+        id: job._id,
+        reporterId: job.reporterId,
+        title: job.title,
+        location: job.location,
+        governorateId: job.governorateId,
+        categoryId: job.categoryId,
+        description: job.description,
+        status: job.status,
+        createdAt: job.createdAt,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Job not found") {
+      res.status(404).json({ message: error.message });
+      return;
+    }
+
+    if (error instanceof Error && error.message === "Unauthorized action") {
+      res.status(403).json({ message: error.message });
+      return;
+    }
+
+    console.error("Get job error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 export const deleteOpenJob = async (
   req: Request<{ jobId: string }>,

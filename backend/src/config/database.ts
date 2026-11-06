@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import User from "../models/User";
+import JobCategory from "../models/JobCategory";
+import Problem from "../models/Problem";
+import normalizeExistingJobData from "./jobDataMigration";
 
 const connectDB = async (): Promise<void> => {
   try {
@@ -8,7 +12,15 @@ const connectDB = async (): Promise<void> => {
       throw new Error("MONGODB_URI is not defined");
     }
 
-    await mongoose.connect(mongoURI);
+    // Indexes are created only after legacy jobs are migrated, so the new
+    // required fields and unique partial index cannot break startup.
+    await mongoose.connect(mongoURI, { autoIndex: false });
+    await normalizeExistingJobData();
+    await Promise.all([
+      User.createIndexes(),
+      JobCategory.createIndexes(),
+      Problem.createIndexes(),
+    ]);
 
     console.log("MongoDB connected successfully");
   } catch (error) {
