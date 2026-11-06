@@ -162,7 +162,7 @@ export const updateUser = async (
      * Build the object that will actually be sent
      * to the service.
      *
-     * We normalize the values here:
+     * normalize the values:
      * - remove spaces around names
      * - convert email to lowercase
      */
@@ -258,7 +258,7 @@ export const deleteUser = async (
 
     await deleteUserByAdmin(req.params.id);
 
-    res.status(204).json({ message: "User deleted successfully" });
+    res.status(200).json({ message: "User successfully deleted" });
   } catch (error) {
     if (error instanceof Error && error.message === "User not found") {
       res.status(404).json({
@@ -276,4 +276,3 @@ export const deleteUser = async (
 };
 //TODO: Test admin routes
 // ! No error message shown when passing regular token in admin access
-// ! For security purposes should the error meaasge not be : A user with this email already exists

@@ -233,7 +233,7 @@ export const deleteAccount = async (
       res.status(401).json({ message: "Authentication required" });
       return;
     }
-    deleteUserAccount(req.user.id);
+    await deleteUserAccount(req.user.id);
     res.status(200).json({ message: "Account deleted successfully" });
   } catch (error) {
     console.error("Delete account error:", error);

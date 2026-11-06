@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import {
   getUsers,
   getUser,
@@ -17,6 +18,15 @@ const router = Router();
  */
 router.use(authenticate);
 router.use(authorize("admin"));
+
+router.param("id", (_req, res, next, id) => {
+  if (!mongoose.isObjectIdOrHexString(id)) {
+    res.status(400).json({ message: "Invalid user ID" });
+    return;
+  }
+
+  next();
+});
 
 router.get("/", getUsers);
 
