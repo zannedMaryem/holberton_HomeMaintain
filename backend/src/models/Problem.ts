@@ -9,8 +9,7 @@ export type ProblemStatus = "open" | "assigned" | "completed" | "closed";
 export interface IProblem extends Document {
   reporterId: mongoose.Types.ObjectId;
   title: string;
-  location: string;
-  governorateId?: TunisiaGovernorateId;
+  location: TunisiaGovernorateId;
   categoryId: mongoose.Types.ObjectId;
   description: string;
   status: ProblemStatus;
@@ -37,15 +36,6 @@ const problemSchema = new Schema<IProblem>(
       type: String,
       required: [true, "Location of the job is required"],
       trim: true,
-      minlength: [
-        2,
-        "The length of the location must be more than 2 characters",
-      ],
-      maxlength: [200, "The location must not exeed 200 characters"],
-    },
-    // Optional only for older jobs created before governorates were controlled.
-    governorateId: {
-      type: String,
       enum: TUNISIA_GOVERNORATES.map((governorate) => governorate.id),
     },
     categoryId: {
@@ -57,7 +47,10 @@ const problemSchema = new Schema<IProblem>(
       type: String,
       required: [true, "A description of the job is required"],
       trim: true,
-      minlength: [2,"The length of the location must be more than 2 characters"],
+      minlength: [
+        2,
+        "The length of the location must be more than 2 characters",
+      ],
       maxlength: [2000, "The description must not exceed 2000 characters"],
     },
     status: {
@@ -78,10 +71,10 @@ const problemSchema = new Schema<IProblem>(
   { timestamps: true },
 );
 
-// Stable ordering supports both page navigation and category-filtered listings.
+// Stable ordering supports page navigation and category/location filtering.
 problemSchema.index({ status: 1, createdAt: -1, _id: -1 });
 problemSchema.index({ status: 1, categoryId: 1, createdAt: -1, _id: -1 });
-problemSchema.index({ status: 1, governorateId: 1, createdAt: -1, _id: -1 });
+problemSchema.index({ status: 1, location: 1, createdAt: -1, _id: -1 });
 // Only open listings are unique; homeowners may repost a job after closing it.
 problemSchema.index(
   { reporterId: 1, duplicateFingerprint: 1 },

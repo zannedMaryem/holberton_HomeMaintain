@@ -92,7 +92,6 @@ const normalizeExistingJobData = async (): Promise<void> => {
       const fingerprint = createJobFingerprint(
         reporterId,
         job.location,
-        "",
         String(categoryId),
         job.description,
       );
@@ -117,12 +116,12 @@ const normalizeExistingJobData = async (): Promise<void> => {
     );
   }
 
-  const governorateMigrationKey = "job-governorate-and-fingerprint-v2";
-  if (await migrations.findOne({ _id: governorateMigrationKey })) return;
+  const locationMigrationKey = "job-location-governorate-v3";
+  if (await migrations.findOne({ _id: locationMigrationKey })) return;
 
-  // Preserve old free-text locations; infer a governorate only for an exact match.
-  const existingJobs = await Problem.collection.find({}).toArray();
-  for (const job of existingJobs) {
+  // Promote an explicit governorate or exact legacy match into `location`.
+  // Unknown old text is preserved rather than assigned to a guessed location.
+  for await (const job of Problem.collection.find({})) {
     const reporterId = String(job.reporterId ?? "");
     const categoryId = String(job.categoryId ?? "");
     if (
@@ -136,32 +135,44 @@ const normalizeExistingJobData = async (): Promise<void> => {
       );
     }
 
-    let governorateId = job.governorateId;
-    if (governorateId === undefined) {
-      const legacyLocation = job.location.trim().toLowerCase();
-      governorateId = TUNISIA_GOVERNORATES.find(
-        ({ id, name }) =>
-          id === legacyLocation || name.toLowerCase() === legacyLocation,
-      )?.id;
-    } else if (!isTunisiaGovernorateId(governorateId)) {
+    let location: string | undefined;
+    if (isTunisiaGovernorateId(job.governorateId)) {
+      location = job.governorateId;
+    } else if (
+      job.governorateId !== undefined &&
+      job.governorateId !== null
+    ) {
       throw new Error(
         `Cannot migrate job ${String(job._id)}: unsupported governorate ID`,
       );
     }
 
+    if (location === undefined) {
+      const legacyLocation = job.location.trim().toLowerCase();
+      location = TUNISIA_GOVERNORATES.find(
+        ({ id, name }) =>
+          id === legacyLocation || name.toLowerCase() === legacyLocation,
+      )?.id;
+    }
+
+    const storedLocation = location ?? job.location;
     const fingerprint = createJobFingerprint(
       reporterId,
-      job.location,
-      governorateId ?? "",
+      storedLocation,
       categoryId,
       job.description,
     );
-    const update: Record<string, unknown> = {
-      duplicateFingerprint: fingerprint,
-    };
-    if (governorateId !== undefined) update.governorateId = governorateId;
 
-    await Problem.collection.updateOne({ _id: job._id }, { $set: update });
+    await Problem.collection.updateOne(
+      { _id: job._id },
+      {
+        $set: {
+          location: storedLocation,
+          duplicateFingerprint: fingerprint,
+        },
+        $unset: { governorateId: "" },
+      },
+    );
   }
 
   // Fail with a useful message before MongoDB reports an opaque index-build error.
@@ -188,7 +199,7 @@ const normalizeExistingJobData = async (): Promise<void> => {
 
   // The marker avoids rescanning the jobs collection at every server startup.
   await migrations.updateOne(
-    { _id: governorateMigrationKey },
+    { _id: locationMigrationKey },
     { $setOnInsert: { completedAt: new Date() } },
     { upsert: true },
   );

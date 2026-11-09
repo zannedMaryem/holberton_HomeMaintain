@@ -8,7 +8,6 @@ const normalize = (value: string): string =>
 export const createJobFingerprint = (
   reporterId: string,
   location: string,
-  governorateId: string,
   categoryId: string,
   description: string,
 ): string =>
@@ -17,7 +16,6 @@ export const createJobFingerprint = (
       JSON.stringify([
         reporterId.toLowerCase(),
         normalize(location),
-        governorateId.toLowerCase(),
         categoryId.toLowerCase(),
         normalize(description),
       ]),

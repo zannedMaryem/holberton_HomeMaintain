@@ -9,18 +9,16 @@ import {
 
 const fieldMaxLimits = {
   title: 72,
-  location: 200,
   description: 2000,
 };
 
 const fieldMinLimits = {
   title: 8,
-  location: 2,
   description: 2,
 };
 
-type JobTextField = "title" | "location" | "description";
-type JobEditableField = JobTextField | "categoryId" | "governorateId";
+type JobTextField = "title" | "description";
+type JobEditableField = JobTextField | "categoryId" | "location";
 
 const validateJobText = (
   value: unknown,
@@ -66,7 +64,6 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   const allowedFields = [
     "title",
     "location",
-    "governorateId",
     "categoryId",
     "description",
   ];
@@ -78,13 +75,11 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   const title = validateJobText(jobBody.title, "title", res);
   if (title === undefined) return;
 
-  const location = validateJobText(jobBody.location, "location", res);
-  if (location === undefined) return;
-
-  if (!isTunisiaGovernorateId(jobBody.governorateId)) {
-    res.status(400).json({ message: "A valid governorateId is required" });
+  if (!isTunisiaGovernorateId(jobBody.location)) {
+    res.status(400).json({ message: "A valid Tunisia governorate is required as location" });
     return;
   }
+  const location = jobBody.location;
 
   if (
     typeof jobBody.categoryId !== "string" ||
@@ -103,11 +98,10 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const job = await createJob({
+    const { job, category, reporterFullName } = await createJob({
       reporterId: req.user.id,
       title,
       location,
-      governorateId: jobBody.governorateId,
       categoryId: jobBody.categoryId,
       description,
     });
@@ -116,11 +110,13 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
       message: "Job successfully created",
       data: {
         id: job._id,
-        reporterId: job.reporterId,
+        reporter: {
+          id: job.reporterId,
+          fullName: reporterFullName,
+        },
         title: job.title,
         location: job.location,
-        governorateId: job.governorateId,
-        categoryId: job.categoryId,
+        category: category.name,
         description: job.description,
         status: job.status,
         createdAt: job.createdAt,
@@ -165,12 +161,11 @@ export const updateOpenJob = async (
   const jobBody = body as Record<string, unknown>;
   const updates: Partial<Record<JobTextField, string>> & {
     categoryId?: mongoose.Types.ObjectId;
-    governorateId?: TunisiaGovernorateId;
+    location?: TunisiaGovernorateId;
   } = {};
   const allowedFields = [
     "title",
     "location",
-    "governorateId",
     "description",
     "categoryId",
   ] as const;
@@ -215,13 +210,15 @@ export const updateOpenJob = async (
       continue;
     }
 
-    if (field === "governorateId") {
-      if (!isTunisiaGovernorateId(jobBody.governorateId)) {
-        res.status(400).json({ message: "A valid governorateId is required" });
+    if (field === "location") {
+      if (!isTunisiaGovernorateId(jobBody.location)) {
+        res.status(400).json({
+          message: "A valid Tunisia governorate is required as location",
+        });
         return;
       }
 
-      updates.governorateId = jobBody.governorateId;
+      updates.location = jobBody.location;
       continue;
     }
 
@@ -237,16 +234,23 @@ export const updateOpenJob = async (
   }
 
   try {
-    const job = await updateJob(req.params.jobId, req.user.id, updates);
+    const { job, categoryName, reporterFullName } = await updateJob(
+      req.params.jobId,
+      req.user.id,
+      updates,
+    );
 
     res.status(200).json({
       message: "Job updated successfully",
       data: {
         id: job._id,
+        reporter: {
+          id: job.reporterId,
+          fullName: reporterFullName,
+        },
         title: job.title,
         location: job.location,
-        governorateId: job.governorateId,
-        categoryId: job.categoryId,
+        category: categoryName,
         description: job.description,
         status: job.status,
       },
@@ -280,8 +284,7 @@ export const listOpenJobs = async (
     res.status(400).json({ message: "Only open jobs can be listed" });
     return;
   }
-  // ! pagination
-  // Reject malformed page values, but cap oversized limits to protect the DB.
+  // Keep paging simple and bounded so a browse request cannot load every job.
   const page = parsePositiveInteger(req.query.page, 1, "page", res);
   if (page === undefined) return;
 
@@ -318,58 +321,41 @@ export const listOpenJobs = async (
     }
   }
 
-  let governorateId: TunisiaGovernorateId | undefined;
-  if (req.query.governorateId !== undefined) {
-    if (!isTunisiaGovernorateId(req.query.governorateId)) {
-      res.status(400).json({ message: "governorateId is not supported" });
-      return;
-    }
-
-    governorateId = req.query.governorateId;
-  }
-
-  let location: string | undefined;
+  let location: TunisiaGovernorateId | undefined;
   if (req.query.location !== undefined) {
-    if (
-      typeof req.query.location !== "string" ||
-      req.query.location.trim().length < 2 ||
-      req.query.location.trim().length > 200
-    ) {
-      res.status(400).json({
-        message: "location filter must contain between 2 and 200 characters",
-      });
+    if (!isTunisiaGovernorateId(req.query.location)) {
+      res.status(400).json({ message: "location must be a supported Tunisia governorate ID" });
       return;
     }
 
-    location = req.query.location.trim();
+    location = req.query.location;
   }
 
   try {
-    const { jobs, total } = await getOpenJobs({
+    const { jobs, hasMore } = await getOpenJobs({
       page,
       limit,
       categoryId,
-      governorateId,
       location,
     });
 
     res.status(200).json({
-      data: jobs.map((job) => ({
+      data: jobs.map(({ job, categoryName, reporterFullName }) => ({
         id: job._id,
+        reporter: {
+          id: job.reporterId,
+          fullName: reporterFullName,
+        },
         title: job.title,
         location: job.location,
-        governorateId: job.governorateId,
-        categoryId: job.categoryId,
+        category: categoryName,
         description: job.description,
         createdAt: job.createdAt,
       })),
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPreviousPage: page > 1,
+        hasMore,
       },
     });
   } catch (error) {
@@ -408,7 +394,7 @@ export const getJob = async (
   }
 
   try {
-    const job = await getJobById(
+    const { job, categoryName, reporterFullName } = await getJobById(
       req.params.jobId,
       req.user.id,
       req.user.role,
@@ -418,11 +404,13 @@ export const getJob = async (
       message: "Job retrieved successfully",
       data: {
         id: job._id,
-        reporterId: job.reporterId,
+        reporter: {
+          id: job.reporterId,
+          fullName: reporterFullName,
+        },
         title: job.title,
         location: job.location,
-        governorateId: job.governorateId,
-        categoryId: job.categoryId,
+        category: categoryName,
         description: job.description,
         status: job.status,
         createdAt: job.createdAt,
