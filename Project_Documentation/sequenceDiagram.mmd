@@ -1,0 +1,142 @@
+---
+references:
+  - "File: /backend/src/app.ts"
+  - "File: /backend/src/controllers/adminUserController.ts"
+  - "File: /backend/src/middleware/roleMiddleware.ts"
+  - "File: /backend/src/routes/adminUserRoutes.ts"
+  - "File: /backend/src/services/userService.ts"
+generationTime: 2026-11-16T17:01:13.110Z
+---
+sequenceDiagram
+    actor Admin
+    participant App as Express app
+    participant Routes as "Admin user routes"
+    participant Auth as "Authentication middleware"
+    participant Role as "Role middleware"
+    participant Controller as "Admin user controller"
+    participant Service as "User service"
+    participant Model as "Mongoose User model"
+    participant DB as Database
+
+    %% Each component is activated once for the diagram's alternative request flows.
+    activate App
+    activate Routes
+    activate Auth
+    activate Role
+    activate Controller
+    activate Service
+    activate Model
+    activate DB
+
+    Note over App,Routes: app.ts parses JSON and mounts the admin router at /api/admin/users.
+
+    Admin->>App: Send HTTP request
+    alt GET /
+        App-->>Admin: 200 welcome message
+    else GET /api/health
+        App-->>Admin: 200 health status
+    else Request to /api/admin/users
+        App->>Routes: Match GET /, GET /:id, PATCH /:id, or DELETE /:id
+        Routes->>Auth: Authenticate request
+        Note over Auth: Authentication implementation is not included in the provided files.
+        Auth->>Role: Continue with req.user set
+        Role->>Role: Check req.user and admin role
+        alt No authenticated user
+            Role-->>App: 401 Authentication required
+            App-->>Admin: 401 response
+        else User is not an admin
+            Role-->>App: 403 Access denied
+            App-->>Admin: 403 response
+        else Admin authorized
+            Role->>Controller: Dispatch matched route
+            alt GET /api/admin/users
+                Controller->>Service: getAllUsers()
+                Service->>Model: find().select("-password").sort(createdAt descending)
+                Model->>DB: Query users
+                DB-->>Model: User list
+                Model-->>Service: Users without passwords
+                Service-->>Controller: Users
+                Controller-->>App: 200 with users
+                App-->>Admin: Users response
+            else GET /api/admin/users/:id
+                Controller->>Service: getUserById(id)
+                Service->>Model: findById(id).select("-password")
+                Model->>DB: Query user
+                DB-->>Model: User or no match
+                Model-->>Service: Query result
+                alt User found
+                    Service-->>Controller: User without password
+                    Controller-->>App: 200 with user
+                    App-->>Admin: User response
+                else User not found
+                    Service-->>Controller: Throw "User not found"
+                    Controller-->>App: 404 response
+                    App-->>Admin: User not found
+                else Other query error
+                    Service-->>Controller: Propagate error
+                    Controller-->>App: 500 response
+                    App-->>Admin: Server error
+                end
+            else PATCH /api/admin/users/:id
+                Controller->>Controller: Check fields, types, lengths, email, and role
+                alt No fields or invalid field values
+                    Controller-->>App: 400 validation response
+                    App-->>Admin: Validation error
+                else Valid updates
+                    Controller->>Controller: Trim names&#59; trim and lowercase email
+                    Controller->>Service: updateUserByAdmin(id, normalized updates)
+                    Service->>Model: findByIdAndUpdate with $set, validators, and password exclusion
+                    Model->>DB: Update user
+                    DB-->>Model: Updated user or no match
+                    Model-->>Service: Query result
+                    alt User found
+                        Service-->>Controller: Updated user
+                        Controller-->>App: 200 success with user
+                        App-->>Admin: Update response
+                    else User not found
+                        Service-->>Controller: Throw "User not found"
+                        Controller-->>App: 404 response
+                        App-->>Admin: User not found
+                    else Other update error
+                        Service-->>Controller: Propagate error
+                        Controller-->>App: 500 response
+                        App-->>Admin: Server error
+                    end
+                end
+            else DELETE /api/admin/users/:id
+                Controller->>Controller: Compare req.user.id with requested id
+                alt Admin is deleting their own account
+                    Controller-->>App: 400 response
+                    App-->>Admin: Cannot delete own admin account
+                else Different account
+                    Controller->>Service: deleteUserByAdmin(id)
+                    Service->>Model: findByIdAndDelete(id)
+                    Model->>DB: Delete user
+                    DB-->>Model: Deleted user or no match
+                    Model-->>Service: Query result
+                    alt User deleted
+                        Service-->>Controller: Success
+                        Controller-->>App: 204 no content
+                        App-->>Admin: 204 response
+                    else User not found
+                        Service-->>Controller: Throw "User not found"
+                        Controller-->>App: 404 response
+                        App-->>Admin: User not found
+                    else Other delete error
+                        Service-->>Controller: Propagate error
+                        Controller-->>App: 500 response
+                        App-->>Admin: Server error
+                    end
+                end
+            end
+        end
+    end
+
+    deactivate DB
+    deactivate Model
+    deactivate Service
+    deactivate Controller
+    deactivate Role
+    deactivate Auth
+    deactivate Routes
+    deactivate App

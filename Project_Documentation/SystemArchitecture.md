@@ -131,7 +131,7 @@ MongoDB stores the persistent data needed by the application. Initial collection
 - `equipment`
 - `rentalRequests`
 - `professionalProfiles`
-- `services`
+- `jobCategories` (service catalog; existing category IDs are preserved)
 - `serviceRequests`
 - `jobApplications`
 - `maintenanceRecords`

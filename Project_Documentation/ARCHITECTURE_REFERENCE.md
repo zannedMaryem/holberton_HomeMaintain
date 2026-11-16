@@ -25,7 +25,7 @@ or an inventory of implemented features.
 | Problem Assessment and DIY Guides | Problem reports, categories, guides, safety information | Problems, maintenance categories, DIY guides |
 | Equipment and Rental Requests | Listings, availability checks, requests and status | Equipment, rental requests |
 | Professional Directory and Direct Requests | Search active professional profiles and request a selected service directly | Professional profiles, services, service requests |
-| Job Marketplace | User-posted open jobs, technician browsing/applications, owner review and assignment | Problems, professional profiles, services, job applications |
+| Job Marketplace | User-posted open jobs, service/governorate-matched technician browsing, applications, and homeowner assignment | Problems, technician profiles, services, job applications |
 | Maintenance History | Records of completed repairs and maintenance | Maintenance records |
 
 ## Proposed MongoDB collections
@@ -35,13 +35,13 @@ Collection names from the architecture proposal:
 | Collection | Intended contents | Design item to resolve |
 | --- | --- | --- |
 | `users` | Accounts and profiles | Role model, authentication fields, privacy. |
-| `problems` | User-posted maintenance jobs and image references | Required fields, open/assigned lifecycle, ownership, photo retention. |
+| `problems` | User-posted maintenance jobs and image references | Required fields, open/assigned lifecycle, ownership, photo retention; jobs reference a service and use a unique fingerprint for duplicate open listings. |
+| `jobCategories` | Service catalog (`name`, `description`, `slug`, `active`) | Legacy collection name retained to preserve existing records and IDs; `/api/services` is canonical, while `/api/job-categories` is a compatibility alias. |
 | `maintenanceCategories` | Problem/maintenance categories | Category ownership and controlled values. |
 | `diyGuides` | Repair steps and safety information | Review process and applicable category links. |
 | `equipment` | Equipment listings | Owner, availability representation, listing state. |
 | `rentalRequests` | Equipment rental requests and status | Date rules, conflicts, state transitions. |
-| `professionalProfiles` | Technician profiles and services offered | Technician account role, active-profile eligibility, verification, and profile visibility. |
-| `services` | Service catalog used by profiles and proposals | Service ownership, controlled values, and lifecycle. |
+| `technicianProfiles` | Technician profiles and service-specific governorate coverage | Technician account role, active-profile eligibility, and profile visibility. |
 | `serviceRequests` | Direct requests from users to selected professionals | Request status transitions, profile/service eligibility, optional link to a problem, scheduling and cancellation policy. |
 | `jobApplications` | Technician applications and service proposals linked to jobs | Proposal fields, application states, one-acceptance rule, withdrawal/decline policy. |
 | `maintenanceRecords` | Completed repairs and maintenance activities | Who may create/view records and relationship to a problem. |
@@ -54,10 +54,10 @@ The professional directory and job marketplace are parallel service paths.
 Users can search active profiles and create `serviceRequests` for a selected
 professional and service. Separately, the `problems` collection doubles as the
 job-posting collection: only records published with an open status are
-returned by the available-jobs listing. A technician's `jobApplications`
-reference a problem/job and a profile and include at least one proposed service
-from that profile. Accepting one application assigns the job and declines the
-remaining pending applications; it does not replace the direct-request path.
+returned by the available-jobs listing. A technician can apply when their
+active profile offers the job service in its governorate. Homeowners may also
+assign a matching technician directly. Both paths use the same conditional
+open-to-assigned transition; direct service requests remain a separate path.
 
 ## Data-flow reference
 
@@ -73,8 +73,8 @@ For direct requests, users search active professional profiles and submit a
 request for a service they offer; both parties can view the request status.
 For the technician marketplace, authenticated technicians query only open jobs,
 submit an application with services from their active profile, and the job
-owner reviews those applications. Acceptance assigns the job atomically and
-declines the remaining pending applications.
+owner reviews those applications and may accept one. The owner may also select
+a matching technician directly. Both choices atomically assign the open job.
 
 ## Implementation checklist
 
