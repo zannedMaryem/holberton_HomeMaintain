@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import User from "../models/User";
-
+import JobApplication from "../models/JobApplication";
+import TechnicianProfile from "../models/TechnicianProfile";
 
 const updateUserProfile = async (
   userId: string,
@@ -84,6 +85,14 @@ const deleteUserAccount = async (userId: string) => {
 
   if (!user) {
     throw new Error("User not found");
+  }
+
+  const technicianProfile = await TechnicianProfile.findOne({ userId }).select("_id");
+  if (technicianProfile) {
+    await JobApplication.deleteMany({
+      technicianProfileId: technicianProfile._id,
+    });
+    await TechnicianProfile.deleteOne({ _id: technicianProfile._id });
   }
 
   await User.findByIdAndDelete(userId);

@@ -1,39 +1,44 @@
 import Problem, { type IProblem } from "../models/Problem";
-import JobCategory from "../models/JobCategory";
+import Service from "../models/Service";
 import User, { type IUser } from "../models/User";
-import { getActiveJobCategory } from "./jobCategoryService";
+import TechnicianProfile from "../models/TechnicianProfile";
+import JobApplication, {
+  type JobApplicationStatus,
+} from "../models/JobApplication";
+import { getActiveService } from "./serviceService";
 import { createJobFingerprint } from "../utils/jobFingerprint";
 import type { TunisiaGovernorateId } from "../constants/tunisiaGovernorates";
+import { getProfilesForServiceArea } from "./technicianProfileService";
 
 interface CreateJobInput {
   reporterId: string;
   title: string;
   location: TunisiaGovernorateId;
-  categoryId: string;
+  serviceId: string;
   description: string;
 };
 
 type JobUpdates = Partial<
   Pick<
     IProblem,
-    "title" | "location" | "categoryId" | "description"
+    "title" | "location" | "serviceId" | "description"
   >
 >;
 
 interface JobDetails {
   job: IProblem;
-  categoryName: string;
+  service: { id: string; name: string };
   reporterFullName: string;
 }
 
 const getJobDetails = async (job: IProblem): Promise<JobDetails> => {
-  const [category, reporter] = await Promise.all([
-    JobCategory.findById(job.categoryId).select("name"),
+  const [service, reporter] = await Promise.all([
+    Service.findById(job.serviceId).select("name"),
     User.findById(job.reporterId).select("firstName lastName"),
   ]);
 
-  if (!category) {
-    throw new Error("Job category not found");
+  if (!service) {
+    throw new Error("Job service not found");
   }
   if (!reporter) {
     throw new Error("Job reporter not found");
@@ -41,7 +46,7 @@ const getJobDetails = async (job: IProblem): Promise<JobDetails> => {
 
   return {
     job,
-    categoryName: category.name,
+    service: { id: service.id, name: service.name },
     reporterFullName: `${reporter.firstName} ${reporter.lastName}`,
   };
 };
@@ -50,11 +55,11 @@ const createJob = async ({
   reporterId,
   title,
   location,
-  categoryId,
+  serviceId,
   description,
 }: CreateJobInput) => {
-  const [category, reporter] = await Promise.all([
-    getActiveJobCategory(categoryId),
+  const [service, reporter] = await Promise.all([
+    getActiveService(serviceId),
     User.findById(reporterId).select("firstName lastName"),
   ]);
   if (!reporter) {
@@ -64,7 +69,7 @@ const createJob = async ({
   const duplicateFingerprint = createJobFingerprint(
     reporterId,
     location,
-    category.id,
+    service.id,
     description,
   );
 
@@ -75,7 +80,7 @@ const createJob = async ({
       reporterId,
       title,
       location,
-      categoryId: category.id,
+      serviceId: service.id,
       description,
       duplicateFingerprint,
       status: "open",
@@ -83,7 +88,7 @@ const createJob = async ({
 
     return {
       job,
-      category,
+      service,
       reporterFullName: `${reporter.firstName} ${reporter.lastName}`,
     };
   } catch (error) {
@@ -119,17 +124,17 @@ const updateJob = async (
     throw new Error("Job is not open");
   }
 
-  if (updates.categoryId !== undefined) {
-    await getActiveJobCategory(updates.categoryId.toString());
+  if (updates.serviceId !== undefined) {
+    await getActiveService(updates.serviceId.toString());
   }
 
   Object.assign(problem, updates);
-  const [category, reporter] = await Promise.all([
-    JobCategory.findById(problem.categoryId).select("name"),
+  const [service, reporter] = await Promise.all([
+    Service.findById(problem.serviceId).select("name"),
     User.findById(problem.reporterId).select("firstName lastName"),
   ]);
-  if (!category) {
-    throw new Error("Job category not found");
+  if (!service) {
+    throw new Error("Job service not found");
   }
   if (!reporter) {
     throw new Error("Job reporter not found");
@@ -138,14 +143,12 @@ const updateJob = async (
   problem.duplicateFingerprint = createJobFingerprint(
     reporterId,
     problem.location,
-    problem.categoryId.toString(),
+    problem.serviceId.toString(),
     problem.description,
   );
 
   try {
-    // Validate modified fields only so pre-migration legacy locations don't
-    // prevent an owner from editing another field on an existing job.
-    await problem.save({ validateModifiedOnly: true });
+    await problem.save();
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -161,7 +164,7 @@ const updateJob = async (
 
   return {
     job: problem,
-    categoryName: category.name,
+    service: { id: service.id, name: service.name },
     reporterFullName: `${reporter.firstName} ${reporter.lastName}`,
   };
 };
@@ -169,19 +172,19 @@ const updateJob = async (
 interface OpenJobFilters {
   page: number;
   limit: number;
-  categoryId?: string;
+  serviceId?: string;
   location?: TunisiaGovernorateId;
 }
 
 const getOpenJobs = async ({
   page,
   limit,
-  categoryId,
+  serviceId,
   location,
 }: OpenJobFilters) => {
   // Keep status fixed to open; caller-controlled filters can only narrow results.
   const filter: Record<string, unknown> = { status: "open" };
-  if (categoryId) filter.categoryId = categoryId;
+  if (serviceId) filter.serviceId = serviceId;
   if (location) filter.location = location;
 
   // Fetch one extra record to tell clients whether another page exists without
@@ -193,14 +196,14 @@ const getOpenJobs = async ({
   const hasMore = results.length > limit;
 
   const jobs = hasMore ? results.slice(0, limit) : results;
-  const categoryIds = [...new Set(jobs.map((job) => job.categoryId.toString()))];
+  const serviceIds = [...new Set(jobs.map((job) => job.serviceId.toString()))];
   const reporterIds = [...new Set(jobs.map((job) => job.reporterId.toString()))];
-  const [categories, reporters] = await Promise.all([
-    JobCategory.find({ _id: { $in: categoryIds } }).select("name"),
+  const [services, reporters] = await Promise.all([
+    Service.find({ _id: { $in: serviceIds } }).select("name"),
     User.find({ _id: { $in: reporterIds } }).select("firstName lastName"),
   ]);
-  const categoryNames = new Map(
-    categories.map((category) => [category.id, category.name]),
+  const servicesById = new Map(
+    services.map((service) => [service.id, { id: service.id, name: service.name }]),
   );
   const reporterNames = new Map(
     reporters.map((reporter) => [
@@ -211,16 +214,16 @@ const getOpenJobs = async ({
 
   return {
     jobs: jobs.map((job) => {
-      const categoryName = categoryNames.get(job.categoryId.toString());
+      const service = servicesById.get(job.serviceId.toString());
       const reporterFullName = reporterNames.get(job.reporterId.toString());
-      if (!categoryName) {
-        throw new Error("Job category not found");
+      if (!service) {
+        throw new Error("Job service not found");
       }
       if (!reporterFullName) {
         throw new Error("Job reporter not found");
       }
 
-      return { job, categoryName, reporterFullName };
+      return { job, service, reporterFullName };
     }),
     hasMore,
   };
@@ -249,11 +252,161 @@ const getJobById = async (
     return getJobDetails(problem);
   }
 
-  if (viewerRole === "technician" && problem.status === "open") {
-    return getJobDetails(problem);
+  if (viewerRole === "technician") {
+    if (problem.status === "open") {
+      return getJobDetails(problem);
+    }
+
+    const profile = await TechnicianProfile.findOne({ userId: viewerId }).select("_id");
+    if (
+      profile &&
+      problem.assignedTechnicianProfileId?.toString() === profile.id
+    ) {
+      return getJobDetails(problem);
+    }
   }
 
   throw new Error("Job not found");
+};
+
+const getJobsForUser = async (
+  userId: string,
+  role: "homeowner" | "technician",
+) => {
+  let jobs: IProblem[];
+  const applicationStatuses = new Map<string, JobApplicationStatus>();
+
+  if (role === "homeowner") {
+    jobs = await Problem.find({ reporterId: userId }).sort({
+      updatedAt: -1,
+      createdAt: -1,
+      _id: -1,
+    });
+  } else {
+    const profile = await TechnicianProfile.findOne({ userId }).select("_id");
+    if (!profile) return [];
+
+    const applications = await JobApplication.find({
+      technicianProfileId: profile._id,
+    }).select("jobId status");
+    const jobIds = new Set(
+      applications.map((application) => application.jobId.toString()),
+    );
+    for (const application of applications) {
+      applicationStatuses.set(
+        application.jobId.toString(),
+        application.status,
+      );
+    }
+
+    // Include direct assignments even if they were made without an application.
+    const assignedJobs = await Problem.find({
+      assignedTechnicianProfileId: profile._id,
+    }).select("_id");
+    for (const job of assignedJobs) jobIds.add(job._id.toString());
+
+    jobs = await Problem.find({ _id: { $in: [...jobIds] } }).sort({
+      updatedAt: -1,
+      createdAt: -1,
+      _id: -1,
+    });
+  }
+
+  if (jobs.length === 0) return [];
+
+  const serviceIds = [...new Set(jobs.map((job) => job.serviceId.toString()))];
+  const reporterIds = [...new Set(jobs.map((job) => job.reporterId.toString()))];
+  const technicianProfileIds = [
+    ...new Set(
+      jobs
+        .map((job) => job.assignedTechnicianProfileId?.toString())
+        .filter((id): id is string => id !== undefined),
+    ),
+  ];
+  const [services, reporters, technicianProfiles] = await Promise.all([
+    Service.find({ _id: { $in: serviceIds } }).select("name"),
+    User.find({ _id: { $in: reporterIds } }).select("firstName lastName"),
+    TechnicianProfile.find({ _id: { $in: technicianProfileIds } }).select(
+      "displayName photoDataUrl",
+    ),
+  ]);
+  const servicesById = new Map(services.map((service) => [service.id, service]));
+  const reportersById = new Map(
+    reporters.map((reporter) => [reporter.id, reporter]),
+  );
+  const technicianProfilesById = new Map(
+    technicianProfiles.map((profile) => [profile.id, profile]),
+  );
+
+  return jobs.map((job) => {
+    const service = servicesById.get(job.serviceId.toString());
+    const reporter = reportersById.get(job.reporterId.toString());
+    const assignedTechnician = job.assignedTechnicianProfileId
+      ? technicianProfilesById.get(job.assignedTechnicianProfileId.toString())
+      : undefined;
+    if (!service || !reporter) {
+      throw new Error("Job references missing service or homeowner");
+    }
+    if (job.assignedTechnicianProfileId && !assignedTechnician) {
+      throw new Error("Job references a missing technician profile");
+    }
+
+    return {
+      id: job._id.toString(),
+      reporter: {
+        id: job.reporterId.toString(),
+        fullName: `${reporter.firstName} ${reporter.lastName}`,
+      },
+      title: job.title,
+      location: job.location,
+      service: { id: service.id, name: service.name },
+      description: job.description,
+      status: job.status,
+      assignedTechnicianProfileId: job.assignedTechnicianProfileId?.toString(),
+      assignedTechnician: assignedTechnician
+        ? {
+            id: assignedTechnician.id,
+            displayName: assignedTechnician.displayName,
+            photoDataUrl: assignedTechnician.photoDataUrl,
+          }
+        : undefined,
+      scheduledDate: job.scheduledDate,
+      scheduledSlot: job.scheduledSlot,
+      ratings: {
+        homeowner: job.homeownerRating?.score,
+        technician: job.technicianRating?.score,
+      },
+      applicationStatus: applicationStatuses.get(job._id.toString()),
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+    };
+  });
+};
+
+export const getMatchingTechnicians = async (
+  jobId: string,
+  homeownerId: string,
+) => {
+  const job = await Problem.findOne({
+    _id: jobId,
+    reporterId: homeownerId,
+    status: "open",
+  });
+  if (!job) {
+    throw new Error("Open job not found");
+  }
+
+  const matches = await getProfilesForServiceArea(
+    job.serviceId.toString(),
+    job.location,
+  );
+  return matches
+    .filter((match) => match.offering !== undefined)
+    .map(({ profile }) => ({
+      id: profile.id,
+      displayName: profile.displayName,
+      description: profile.description,
+    }));
 };
 
 const deleteJob = async (jobId: string, reporterId: string) => {
@@ -278,4 +431,11 @@ const deleteJob = async (jobId: string, reporterId: string) => {
   });
 };
 
-export { createJob, getOpenJobs, updateJob, deleteJob, getJobById };
+export {
+  createJob,
+  getOpenJobs,
+  updateJob,
+  deleteJob,
+  getJobById,
+  getJobsForUser,
+};

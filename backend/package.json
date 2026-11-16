@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test": "NODE_PATH=./node_modules tsx --test ../test/*.test.ts",
     "start": "node dist/server.js"
   },
   "keywords": [],

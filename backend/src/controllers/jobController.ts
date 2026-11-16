@@ -1,7 +1,15 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import { createJob, getOpenJobs, updateJob, deleteJob, getJobById } from "../services/jobService";
-import { getActiveJobCategory } from "../services/jobCategoryService";
+import {
+  createJob,
+  getOpenJobs,
+  updateJob,
+  deleteJob,
+  getJobById,
+  getMatchingTechnicians,
+  getJobsForUser,
+} from "../services/jobService";
+import { getActiveService } from "../services/serviceService";
 import {
   isTunisiaGovernorateId,
   type TunisiaGovernorateId,
@@ -18,7 +26,7 @@ const fieldMinLimits = {
 };
 
 type JobTextField = "title" | "description";
-type JobEditableField = JobTextField | "categoryId" | "location";
+type JobEditableField = JobTextField | "serviceId" | "location";
 
 const validateJobText = (
   value: unknown,
@@ -64,7 +72,7 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   const allowedFields = [
     "title",
     "location",
-    "categoryId",
+    "serviceId",
     "description",
   ];
   if (Object.keys(jobBody).some((field) => !allowedFields.includes(field))) {
@@ -82,10 +90,10 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   const location = jobBody.location;
 
   if (
-    typeof jobBody.categoryId !== "string" ||
-    !mongoose.isObjectIdOrHexString(jobBody.categoryId)
+    typeof jobBody.serviceId !== "string" ||
+    !mongoose.isObjectIdOrHexString(jobBody.serviceId)
   ) {
-    res.status(400).json({ message: "A valid categoryId is required" });
+    res.status(400).json({ message: "A valid serviceId is required" });
     return;
   }
 
@@ -98,11 +106,11 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const { job, category, reporterFullName } = await createJob({
+    const { job, service, reporterFullName } = await createJob({
       reporterId: req.user.id,
       title,
       location,
-      categoryId: jobBody.categoryId,
+      serviceId: jobBody.serviceId,
       description,
     });
 
@@ -116,7 +124,7 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
         },
         title: job.title,
         location: job.location,
-        category: category.name,
+        service: { id: service.id, name: service.name },
         description: job.description,
         status: job.status,
         createdAt: job.createdAt,
@@ -133,7 +141,7 @@ export const postJob = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    if (error instanceof Error && error.message === "Job category not found") {
+    if (error instanceof Error && error.message === "Service not found or inactive") {
       res.status(400).json({ message: error.message });
       return;
     }
@@ -160,14 +168,14 @@ export const updateOpenJob = async (
 
   const jobBody = body as Record<string, unknown>;
   const updates: Partial<Record<JobTextField, string>> & {
-    categoryId?: mongoose.Types.ObjectId;
+    serviceId?: mongoose.Types.ObjectId;
     location?: TunisiaGovernorateId;
   } = {};
   const allowedFields = [
     "title",
     "location",
     "description",
-    "categoryId",
+    "serviceId",
   ] as const;
 
   if (
@@ -184,29 +192,29 @@ export const updateOpenJob = async (
   for (const field of allowedFields) {
     if (jobBody[field] === undefined) continue;
 
-    if (field === "categoryId") {
+    if (field === "serviceId") {
       if (
-        typeof jobBody.categoryId !== "string" ||
-        !mongoose.isObjectIdOrHexString(jobBody.categoryId)
+        typeof jobBody.serviceId !== "string" ||
+        !mongoose.isObjectIdOrHexString(jobBody.serviceId)
       ) {
-        res.status(400).json({ message: "A valid categoryId is required" });
+        res.status(400).json({ message: "A valid serviceId is required" });
         return;
       }
 
       try {
-        await getActiveJobCategory(jobBody.categoryId);
+        await getActiveService(jobBody.serviceId);
       } catch (error) {
-        if (error instanceof Error && error.message === "Job category not found") {
+        if (error instanceof Error && error.message === "Service not found or inactive") {
           res.status(400).json({ message: error.message });
           return;
         }
 
-        console.error("Validate job category error:", error);
+        console.error("Validate job service error:", error);
         res.status(500).json({ message: "Server error" });
         return;
       }
 
-      updates.categoryId = new mongoose.Types.ObjectId(jobBody.categoryId);
+      updates.serviceId = new mongoose.Types.ObjectId(jobBody.serviceId);
       continue;
     }
 
@@ -234,7 +242,7 @@ export const updateOpenJob = async (
   }
 
   try {
-    const { job, categoryName, reporterFullName } = await updateJob(
+    const { job, service, reporterFullName } = await updateJob(
       req.params.jobId,
       req.user.id,
       updates,
@@ -250,7 +258,7 @@ export const updateOpenJob = async (
         },
         title: job.title,
         location: job.location,
-        category: categoryName,
+        service,
         description: job.description,
         status: job.status,
       },
@@ -296,26 +304,26 @@ export const listOpenJobs = async (
     return;
   }
 
-  let categoryId: string | undefined;
-  if (req.query.categoryId !== undefined) {
+  let serviceId: string | undefined;
+  if (req.query.serviceId !== undefined) {
     if (
-      typeof req.query.categoryId !== "string" ||
-      !mongoose.isObjectIdOrHexString(req.query.categoryId)
+      typeof req.query.serviceId !== "string" ||
+      !mongoose.isObjectIdOrHexString(req.query.serviceId)
     ) {
-      res.status(400).json({ message: "categoryId must be a valid ObjectId" });
+      res.status(400).json({ message: "serviceId must be a valid ObjectId" });
       return;
     }
 
     try {
-      await getActiveJobCategory(req.query.categoryId);
-      categoryId = req.query.categoryId;
+      await getActiveService(req.query.serviceId);
+      serviceId = req.query.serviceId;
     } catch (error) {
-      if (error instanceof Error && error.message === "Job category not found") {
+      if (error instanceof Error && error.message === "Service not found or inactive") {
         res.status(400).json({ message: error.message });
         return;
       }
 
-      console.error("Validate job category filter error:", error);
+      console.error("Validate job service filter error:", error);
       res.status(500).json({ message: "Server error" });
       return;
     }
@@ -335,12 +343,12 @@ export const listOpenJobs = async (
     const { jobs, hasMore } = await getOpenJobs({
       page,
       limit,
-      categoryId,
+      serviceId,
       location,
     });
 
     res.status(200).json({
-      data: jobs.map(({ job, categoryName, reporterFullName }) => ({
+      data: jobs.map(({ job, service, reporterFullName }) => ({
         id: job._id,
         reporter: {
           id: job.reporterId,
@@ -348,7 +356,7 @@ export const listOpenJobs = async (
         },
         title: job.title,
         location: job.location,
-        category: categoryName,
+        service,
         description: job.description,
         createdAt: job.createdAt,
       })),
@@ -360,6 +368,54 @@ export const listOpenJobs = async (
     });
   } catch (error) {
     console.error("List open jobs error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const listMyJobs = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+  if (req.user.role !== "homeowner" && req.user.role !== "technician") {
+    res.status(403).json({ message: "This account cannot view personal jobs" });
+    return;
+  }
+
+  try {
+    const jobs = await getJobsForUser(req.user.id, req.user.role);
+    res.status(200).json({ data: jobs });
+  } catch (error) {
+    console.error("List personal jobs error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getJobMatchingTechnicians = async (
+  req: Request<{ jobId: string }>,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+
+  try {
+    const technicians = await getMatchingTechnicians(
+      req.params.jobId,
+      req.user.id,
+    );
+    res.status(200).json({ data: technicians });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Open job not found") {
+      res.status(404).json({ message: error.message });
+      return;
+    }
+
+    console.error("Find matching technicians error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -394,7 +450,7 @@ export const getJob = async (
   }
 
   try {
-    const { job, categoryName, reporterFullName } = await getJobById(
+    const { job, service, reporterFullName } = await getJobById(
       req.params.jobId,
       req.user.id,
       req.user.role,
@@ -410,9 +466,16 @@ export const getJob = async (
         },
         title: job.title,
         location: job.location,
-        category: categoryName,
+        service,
         description: job.description,
         status: job.status,
+        assignedTechnicianProfileId: job.assignedTechnicianProfileId,
+        scheduledDate: job.scheduledDate,
+        scheduledSlot: job.scheduledSlot,
+        ratings: {
+          homeowner: job.homeownerRating?.score,
+          technician: job.technicianRating?.score,
+        },
         createdAt: job.createdAt,
       },
     });

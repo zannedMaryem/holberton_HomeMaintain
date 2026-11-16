@@ -8,7 +8,7 @@ const normalize = (value: string): string =>
 export const createJobFingerprint = (
   reporterId: string,
   location: string,
-  categoryId: string,
+  serviceId: string,
   description: string,
 ): string =>
   createHash("sha256")
@@ -16,18 +16,8 @@ export const createJobFingerprint = (
       JSON.stringify([
         reporterId.toLowerCase(),
         normalize(location),
-        categoryId.toLowerCase(),
+        serviceId.toLowerCase(),
         normalize(description),
       ]),
     )
     .digest("hex");
-
-export const jobCategorySlug = (categoryName: string): string => {
-  const slug = categoryName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  return slug || "other";
-};

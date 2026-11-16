@@ -5,18 +5,52 @@ import {
 } from "../constants/tunisiaGovernorates";
 
 export type ProblemStatus = "open" | "assigned" | "completed" | "closed";
+export type JobTimeSlot = "morning" | "afternoon";
+
+export interface IJobRating {
+  reviewerId: mongoose.Types.ObjectId;
+  score: number;
+  createdAt: Date;
+}
 
 export interface IProblem extends Document {
   reporterId: mongoose.Types.ObjectId;
   title: string;
   location: TunisiaGovernorateId;
-  categoryId: mongoose.Types.ObjectId;
+  serviceId: mongoose.Types.ObjectId;
+  assignedTechnicianProfileId?: mongoose.Types.ObjectId;
+  scheduledDate?: string;
+  scheduledSlot?: JobTimeSlot;
+  homeownerRating?: IJobRating;
+  technicianRating?: IJobRating;
   description: string;
   status: ProblemStatus;
   duplicateFingerprint: string;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const jobRatingSchema = new Schema<IJobRating>(
+  {
+    reviewerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    score: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 5,
+      validate: {
+        validator: Number.isInteger,
+        message: "Rating must be a whole number",
+      },
+    },
+    createdAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
 
 const problemSchema = new Schema<IProblem>(
   {
@@ -38,11 +72,26 @@ const problemSchema = new Schema<IProblem>(
       trim: true,
       enum: TUNISIA_GOVERNORATES.map((governorate) => governorate.id),
     },
-    categoryId: {
+    serviceId: {
       type: Schema.Types.ObjectId,
-      ref: "JobCategory",
-      required: [true, "A valid job category is required"],
+      ref: "Service",
+      required: [true, "A valid service is required"],
     },
+    assignedTechnicianProfileId: {
+      type: Schema.Types.ObjectId,
+      ref: "TechnicianProfile",
+    },
+    scheduledDate: {
+      // Keep this as a local calendar date instead of shifting it through UTC.
+      type: String,
+      match: [/^\d{4}-\d{2}-\d{2}$/, "Scheduled date must use YYYY-MM-DD"],
+    },
+    scheduledSlot: {
+      type: String,
+      enum: ["morning", "afternoon"],
+    },
+    homeownerRating: { type: jobRatingSchema },
+    technicianRating: { type: jobRatingSchema },
     description: {
       type: String,
       required: [true, "A description of the job is required"],
@@ -71,10 +120,23 @@ const problemSchema = new Schema<IProblem>(
   { timestamps: true },
 );
 
-// Stable ordering supports page navigation and category/location filtering.
+// Stable ordering supports page navigation and service/location filtering.
 problemSchema.index({ status: 1, createdAt: -1, _id: -1 });
-problemSchema.index({ status: 1, categoryId: 1, createdAt: -1, _id: -1 });
+problemSchema.index({ status: 1, serviceId: 1, createdAt: -1, _id: -1 });
 problemSchema.index({ status: 1, location: 1, createdAt: -1, _id: -1 });
+// A technician can have at most one active job in each reserved time slot.
+problemSchema.index(
+  { assignedTechnicianProfileId: 1, scheduledDate: 1, scheduledSlot: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: "assigned",
+      scheduledDate: { $type: "string" },
+      scheduledSlot: { $type: "string" },
+    },
+    name: "unique_assigned_technician_time_slot",
+  },
+);
 // Only open listings are unique; homeowners may repost a job after closing it.
 problemSchema.index(
   { reporterId: 1, duplicateFingerprint: 1 },

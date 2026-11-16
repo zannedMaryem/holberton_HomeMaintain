@@ -1,20 +1,27 @@
 import { Document, Schema, model } from "mongoose";
 
-export interface IJobCategory extends Document {
+export interface IService extends Document {
   name: string;
+  description: string;
   slug: string;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const jobCategorySchema = new Schema<IJobCategory>(
+const serviceSchema = new Schema<IService>(
   {
     name: {
       type: String,
       required: true,
       trim: true,
       maxlength: 100,
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
     },
     slug: {
       type: String,
@@ -31,8 +38,8 @@ const jobCategorySchema = new Schema<IJobCategory>(
   { timestamps: true, collection: "jobCategories" },
 );
 
-jobCategorySchema.index({ slug: 1 }, { unique: true });
+serviceSchema.index({ slug: 1 }, { unique: true });
 
-const JobCategory = model<IJobCategory>("JobCategory", jobCategorySchema);
+const Service = model<IService>("Service", serviceSchema);
 
-export default JobCategory;
+export default Service;
