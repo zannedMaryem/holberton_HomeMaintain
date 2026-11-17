@@ -45,3 +45,20 @@ and turns unsuccessful HTTP responses into errors for the page to display.
    controller, service, and model in `backend/src`.
 6. Refer to `styles.css` for presentation. Most page-specific styles use a
    page-level class, while shared controls use common classes.
+
+## Running the frontend
+
+Start the backend and configure its MongoDB connection as described in the
+backend documentation. In another terminal, run:
+
+```sh
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
+Vite serves the frontend on port `5173` and proxies `/api` requests to the
+backend on port `5000`. To type-check and create a production build, run:
+
+```sh
+npm --prefix frontend run build
+```

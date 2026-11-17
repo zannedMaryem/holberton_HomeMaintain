@@ -16,23 +16,6 @@ per-job ratings, and equipment rentals. The React frontend provides the public
 homepage and signed-in homeowner/technician pages for jobs and equipment rentals.
 DIY repair guidance remains planned.
 
-## Running the frontend
-
-Start the backend and configure its MongoDB connection as described in the
-backend documentation. In another terminal, run:
-
-```sh
-npm --prefix frontend install
-npm --prefix frontend run dev
-```
-
-Vite serves the frontend on port `5173` and proxies `/api` requests to the
-backend on port `5000`. To type-check and create a production build, run:
-
-```sh
-npm --prefix frontend run build
-```
-
 ## Documentation
 
 - [System Architecture](Project_Documentation/SystemArchitecture.md) — proposed
