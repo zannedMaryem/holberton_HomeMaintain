@@ -5,8 +5,9 @@ import TechnicianProfile from "../models/TechnicianProfile";
 
 export const createJobApplication = async (
   jobId: string,
-  technicianUserId: string,
+  actorId: string,
   proposalMessage: string,
+  requestedTechnicianProfileId?: string,
 ) => {
   const job = await Problem.findOne({ _id: jobId, status: "open" });
   if (!job) {
@@ -16,14 +17,20 @@ export const createJobApplication = async (
   if (!service) {
     throw new Error("Job service is not active");
   }
-  if (job.reporterId.toString() === technicianUserId) {
+  const isHomeownerRequest = requestedTechnicianProfileId !== undefined;
+  if (isHomeownerRequest && job.reporterId.toString() !== actorId) {
+    throw new Error("Unauthorized action");
+  }
+  if (!isHomeownerRequest && job.reporterId.toString() === actorId) {
     throw new Error("You cannot apply to your own job");
   }
 
-  const profile = await TechnicianProfile.findOne({
-    userId: technicianUserId,
-    active: true,
-  });
+  const profile = isHomeownerRequest
+    ? await TechnicianProfile.findOne({
+        _id: requestedTechnicianProfileId,
+        active: true,
+      })
+    : await TechnicianProfile.findOne({ userId: actorId, active: true });
   if (!profile) {
     throw new Error("Active technician profile not found");
   }
@@ -37,6 +44,14 @@ export const createJobApplication = async (
     throw new Error("Technician does not offer this service in the job governorate");
   }
 
+  if (isHomeownerRequest && profile.userId.toString() === actorId) {
+    throw new Error("You cannot request yourself for your own job");
+  }
+
+  const requestType = isHomeownerRequest
+    ? "homeowner_request"
+    : "technician_proposal";
+
   // Reopening a job cancels its prior accepted proposal; that technician may
   // submit a fresh proposal without creating a duplicate application record.
   const cancelledApplication = await JobApplication.findOneAndUpdate(
@@ -46,7 +61,7 @@ export const createJobApplication = async (
       status: "cancelled",
     },
     {
-      $set: { proposalMessage, status: "pending" },
+      $set: { proposalMessage, status: "pending", requestType },
     },
     { new: true, runValidators: true },
   );
@@ -59,6 +74,7 @@ export const createJobApplication = async (
       jobId,
       technicianProfileId: profile.id,
       proposalMessage,
+      requestType,
       status: "pending",
     });
   } catch (error) {
@@ -116,6 +132,7 @@ export const listJobApplications = async (
         description: profile.description,
       },
       proposalMessage: application.proposalMessage,
+      requestType: application.requestType,
       status: application.status,
       createdAt: application.createdAt,
     };

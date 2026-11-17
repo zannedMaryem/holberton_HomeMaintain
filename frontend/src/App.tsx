@@ -103,6 +103,9 @@ function App() {
     sessionStorage.getItem("homemaintain-token"),
   );
   const [user, setUser] = useState<Account | null>(null);
+  const [technicianProfileAccess, setTechnicianProfileAccess] = useState<
+    "loading" | "active" | "inactive"
+  >(token ? "loading" : "inactive");
   const [authPending, setAuthPending] = useState(Boolean(token));
   const [authError, setAuthError] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
@@ -159,8 +162,7 @@ function App() {
             window.history.replaceState(null, "", "#personal-space");
             setCurrentPage("personal-space");
           } else if (
-            (requestedPage === "find-pro" && account.role !== "homeowner") ||
-            (requestedPage === "find-job" && account.role !== "technician")
+            (requestedPage === "find-pro" && account.role !== "homeowner")
           ) {
             window.history.replaceState(null, "", "#personal-space");
             setCurrentPage("personal-space");
@@ -186,10 +188,47 @@ function App() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !user || user.role === "admin") {
+      setTechnicianProfileAccess("inactive");
+      return;
+    }
+
+    let active = true;
+    setTechnicianProfileAccess("loading");
+    apiRequest<{ data: { active: boolean } }>(
+      "/technicians/me/profile",
+      token,
+    )
+      .then(({ data }) => {
+        if (active) {
+          setTechnicianProfileAccess(data.active ? "active" : "inactive");
+        }
+      })
+      .catch(() => {
+        if (active) setTechnicianProfileAccess("inactive");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (
+      currentPage === "find-job" &&
+      technicianProfileAccess === "inactive"
+    ) {
+      window.history.replaceState(null, "", "#personal-space");
+      setCurrentPage("personal-space");
+    }
+  }, [currentPage, technicianProfileAccess]);
+
   const handleAuthenticated = (sessionToken: string, account: Account) => {
     sessionStorage.setItem("homemaintain-token", sessionToken);
     setToken(sessionToken);
     setUser(account);
+    setTechnicianProfileAccess("loading");
     setAuthError("");
     setAuthMode(null);
     navigate("personal-space");
@@ -199,6 +238,7 @@ function App() {
     sessionStorage.removeItem("homemaintain-token");
     setToken(null);
     setUser(null);
+    setTechnicianProfileAccess("inactive");
     setAuthError("");
     window.history.replaceState(null, "", "#home");
     setCurrentPage("home");
@@ -264,7 +304,7 @@ function App() {
                 {user.role === "homeowner" && (
                   <button onClick={() => navigate("find-pro")}>Find a pro</button>
                 )}
-                {user.role === "technician" && (
+                {technicianProfileAccess === "active" && (
                   <button onClick={() => navigate("find-job")}>Find a job</button>
                 )}
                 <button onClick={() => navigate("rentals")}>Rentals</button>
@@ -338,8 +378,12 @@ function App() {
                 page={currentPage}
                 user={user}
                 token={token ?? ""}
+                hasActiveTechnicianProfile={technicianProfileAccess === "active"}
                 onNavigate={navigate}
                 onUserUpdate={setUser}
+                onTechnicianProfileStatusChange={(active) =>
+                  setTechnicianProfileAccess(active ? "active" : "inactive")
+                }
               />
             </div>
           </section>
@@ -635,7 +679,7 @@ function App() {
                 {user.role === "homeowner" && (
                   <button onClick={() => navigate("find-pro")}>Find a pro</button>
                 )}
-                {user.role === "technician" && (
+                {technicianProfileAccess === "active" && (
                   <button onClick={() => navigate("find-job")}>Find a job</button>
                 )}
                 <button onClick={() => navigate("rentals")}>Equipment rentals</button>

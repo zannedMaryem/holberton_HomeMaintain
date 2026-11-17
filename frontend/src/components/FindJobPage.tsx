@@ -16,6 +16,7 @@ import {
 
 interface FindJobPageProps {
   token: string;
+  userId: string;
   onManageProfile: () => void;
 }
 
@@ -30,6 +31,7 @@ interface OpenJobsPage {
 
 export default function FindJobPage({
   token,
+  userId,
   onManageProfile,
 }: FindJobPageProps) {
   const [profile, setProfile] = useState<TechnicianProfile | null>(null);
@@ -60,7 +62,7 @@ export default function FindJobPage({
           token,
         ),
         apiRequest<OpenJobsPage>(`/jobs?page=${pageNumber}&limit=50`, token),
-        apiRequest<ApiEnvelope<Job[]>>("/jobs/mine", token),
+        apiRequest<ApiEnvelope<Job[]>>("/jobs/technician/mine", token),
       ]);
 
       if (profileResult.status === "fulfilled") {
@@ -121,6 +123,7 @@ export default function FindJobPage({
   const matchingJobs = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return jobs.filter((job) => {
+      if (job.reporter?.id === userId) return false;
       const matchingOffering = profile?.offerings.some(
         (offering) =>
           offering.service.id === job.service.id &&
@@ -139,7 +142,7 @@ export default function FindJobPage({
       }
       return true;
     });
-  }, [jobs, locationFilter, profile, search, serviceFilter]);
+  }, [jobs, locationFilter, profile, search, serviceFilter, userId]);
 
   const submitApplication = async (
     event: FormEvent<HTMLFormElement>,

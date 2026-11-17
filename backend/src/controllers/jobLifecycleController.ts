@@ -79,7 +79,6 @@ export const getJobTimeSlotAvailability = async (
     const availability = await getJobAvailability(
       req.params.jobId,
       req.user.id,
-      req.user.role === "technician" ? "technician" : "homeowner",
       req.query.date,
     );
     res.status(200).json({ data: availability });
@@ -112,7 +111,6 @@ export const scheduleAssignedJob = async (
     const job = await reserveJobTimeSlot(
       req.params.jobId,
       req.user.id,
-      req.user.role === "technician" ? "technician" : "homeowner",
       req.body.date,
       req.body.slot,
     );
@@ -205,7 +203,6 @@ export const rateCompletedJob = async (
     const job = await submitJobRating(
       req.params.jobId,
       req.user.id,
-      req.user.role === "technician" ? "technician" : "homeowner",
       req.body.score,
     );
     res.status(201).json({

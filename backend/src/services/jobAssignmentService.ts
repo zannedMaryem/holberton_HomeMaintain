@@ -116,4 +116,50 @@ const declineJobApplication = async (
   return application;
 };
 
-export { assignTechnicianToJob, declineJobApplication };
+const respondToHomeownerRequest = async (
+  jobId: string,
+  technicianUserId: string,
+  applicationId: string,
+  decision: "accept" | "decline",
+) => {
+  const profile = await TechnicianProfile.findOne({
+    userId: technicianUserId,
+    active: true,
+  });
+  if (!profile) throw new Error("Active technician profile not found");
+
+  const application = await JobApplication.findOne({
+    _id: applicationId,
+    jobId,
+    technicianProfileId: profile._id,
+    requestType: "homeowner_request",
+    status: "pending",
+  });
+  if (!application) throw new Error("Pending job application not found");
+
+  const job = await Problem.findOne({ _id: jobId, status: "open" });
+  if (!job) throw new Error("Job is no longer open");
+
+  if (decision === "decline") {
+    const declined = await JobApplication.findOneAndUpdate(
+      { _id: application._id, status: "pending" },
+      { $set: { status: "declined" } },
+      { new: true, runValidators: true },
+    );
+    if (!declined) throw new Error("Pending job application not found");
+    return { application: declined };
+  }
+
+  return assignTechnicianToJob(
+    job.id,
+    job.reporterId.toString(),
+    profile.id,
+    application.id,
+  );
+};
+
+export {
+  assignTechnicianToJob,
+  declineJobApplication,
+  respondToHomeownerRequest,
+};

@@ -8,6 +8,7 @@ import {
 import {
   assignTechnicianToJob,
   declineJobApplication,
+  respondToHomeownerRequest,
 } from "../services/jobAssignmentService";
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
@@ -47,6 +48,7 @@ const handleWorkflowError = (
   }
   if (
     error.message === "You cannot apply to your own job" ||
+    error.message === "You cannot request yourself for your own job" ||
     error.message === "Technician does not offer this service in the job governorate" ||
     error.message === "You have already applied to this job"
   ) {
@@ -66,15 +68,28 @@ export const postJobApplication = async (
     res.status(401).json({ message: "Authentication required" });
     return;
   }
+  const isHomeownerRequest =
+    req.user.role === "homeowner" &&
+    isJsonObject(req.body) &&
+    Object.prototype.hasOwnProperty.call(req.body, "technicianProfileId");
   if (
     !isJsonObject(req.body) ||
-    Object.keys(req.body).some((key) => key !== "proposalMessage") ||
+    Object.keys(req.body).some((key) =>
+      isHomeownerRequest
+        ? key !== "proposalMessage" && key !== "technicianProfileId"
+        : key !== "proposalMessage",
+    ) ||
     typeof req.body.proposalMessage !== "string" ||
     req.body.proposalMessage.trim().length < 2 ||
-    req.body.proposalMessage.trim().length > 2000
+    req.body.proposalMessage.trim().length > 2000 ||
+    (isHomeownerRequest &&
+      (typeof req.body.technicianProfileId !== "string" ||
+        !mongoose.isObjectIdOrHexString(req.body.technicianProfileId)))
   ) {
     res.status(400).json({
-      message: "proposalMessage must contain between 2 and 2000 characters",
+      message: isHomeownerRequest
+        ? "A valid technicianProfileId and proposalMessage are required"
+        : "proposalMessage must contain between 2 and 2000 characters",
     });
     return;
   }
@@ -84,6 +99,7 @@ export const postJobApplication = async (
       req.params.jobId,
       req.user.id,
       req.body.proposalMessage.trim(),
+      isHomeownerRequest ? req.body.technicianProfileId : undefined,
     );
     res.status(201).json({
       message: "Job application submitted successfully",
@@ -92,6 +108,7 @@ export const postJobApplication = async (
         jobId: application.jobId,
         status: application.status,
         proposalMessage: application.proposalMessage,
+        requestType: application.requestType,
         createdAt: application.createdAt,
       },
     });
@@ -180,6 +197,54 @@ export const decideJobApplication = async (
   }
 
   try {
+    const targetApplication = await JobApplication.findOne({
+      _id: req.params.applicationId,
+      jobId: req.params.jobId,
+      status: "pending",
+    });
+    if (!targetApplication) {
+      res.status(404).json({ message: "Pending job application not found" });
+      return;
+    }
+
+    if (targetApplication.requestType === "homeowner_request") {
+      const result = await respondToHomeownerRequest(
+        req.params.jobId,
+        req.user.id,
+        req.params.applicationId,
+        req.body.decision,
+      );
+      if (req.body.decision === "decline") {
+        res.status(200).json({
+          message: "Homeowner request declined successfully",
+          data: { id: result.application.id, status: result.application.status },
+        });
+        return;
+      }
+      if (!("job" in result) || !result.application) {
+        throw new Error("Accepted homeowner request was not returned");
+      }
+      res.status(200).json({
+        message: "Homeowner request accepted successfully",
+        data: {
+          jobId: result.job.id,
+          status: result.job.status,
+          technician: {
+            id: result.profile.id,
+            displayName: result.profile.displayName,
+          },
+          applicationId: result.application.id,
+          applicationStatus: result.application.status,
+        },
+      });
+      return;
+    }
+
+    if (req.user.role !== "homeowner") {
+      res.status(403).json({ message: "Unauthorized action" });
+      return;
+    }
+
     if (req.body.decision === "decline") {
       const application = await declineJobApplication(
         req.params.jobId,
@@ -193,21 +258,11 @@ export const decideJobApplication = async (
       return;
     }
 
-    const application = await JobApplication.findOne({
-      _id: req.params.applicationId,
-      jobId: req.params.jobId,
-      status: "pending",
-    });
-    if (!application) {
-      res.status(404).json({ message: "Pending job application not found" });
-      return;
-    }
-
     const { job, profile, application: acceptedApplication } = await assignTechnicianToJob(
       req.params.jobId,
       req.user.id,
-      application.technicianProfileId.toString(),
-      application.id,
+      targetApplication.technicianProfileId.toString(),
+      targetApplication.id,
     );
     if (!acceptedApplication) {
       throw new Error("Accepted job application was not returned");

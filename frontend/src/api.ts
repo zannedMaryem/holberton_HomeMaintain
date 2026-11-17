@@ -88,6 +88,8 @@ export interface Job {
     technician?: number;
   };
   applicationStatus?: JobApplication["status"];
+  applicationRequestType?: JobApplication["requestType"];
+  applicationId?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -101,6 +103,7 @@ export interface JobApplication {
   };
   proposalMessage: string;
   status: "pending" | "accepted" | "declined" | "cancelled";
+  requestType: "technician_proposal" | "homeowner_request";
   createdAt: string;
 }
 
@@ -108,6 +111,7 @@ export interface TechnicianMatch {
   id: string;
   displayName: string;
   description: string;
+  ratings: RatingSummary;
 }
 
 export interface TechnicianListing {
@@ -117,6 +121,12 @@ export interface TechnicianListing {
   photoDataUrl?: string;
   service: { id: string; name: string };
   governorates: string[];
+  ratings: RatingSummary;
+}
+
+export interface RatingSummary {
+  average: number | null;
+  count: number;
 }
 
 export interface AvailableSlot {
@@ -130,6 +140,7 @@ export interface TechnicianProfile {
   description: string;
   photoDataUrl?: string;
   active: boolean;
+  ratings: RatingSummary;
   offerings: Array<{
     service: { id: string; name: string; active: boolean };
     governorates: string[];

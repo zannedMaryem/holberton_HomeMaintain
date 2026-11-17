@@ -5,6 +5,7 @@ import TechnicianProfile from "../models/TechnicianProfile";
 import JobApplication, {
   type JobApplicationStatus,
 } from "../models/JobApplication";
+import type { JobApplicationType } from "../models/JobApplication";
 import { getActiveService } from "./serviceService";
 import { createJobFingerprint } from "../utils/jobFingerprint";
 import type { TunisiaGovernorateId } from "../constants/tunisiaGovernorates";
@@ -275,28 +276,33 @@ const getJobsForUser = async (
 ) => {
   let jobs: IProblem[];
   const applicationStatuses = new Map<string, JobApplicationStatus>();
+  const applicationTypes = new Map<string, JobApplicationType>();
+  const applicationIds = new Map<string, string>();
 
+  let jobIds = new Set<string>();
   if (role === "homeowner") {
-    jobs = await Problem.find({ reporterId: userId }).sort({
-      updatedAt: -1,
-      createdAt: -1,
-      _id: -1,
-    });
-  } else {
-    const profile = await TechnicianProfile.findOne({ userId }).select("_id");
-    if (!profile) return [];
+    const homeownerJobs = await Problem.find({ reporterId: userId }).select("_id");
+    for (const job of homeownerJobs) jobIds.add(job._id.toString());
+  }
 
+  // A homeowner may also have a technician profile. Include incoming requests
+  // and assigned work in the same overview while retaining their own jobs.
+  const profile = await TechnicianProfile.findOne({ userId }).select("_id");
+  if (profile) {
     const applications = await JobApplication.find({
       technicianProfileId: profile._id,
-    }).select("jobId status");
-    const jobIds = new Set(
-      applications.map((application) => application.jobId.toString()),
-    );
+    }).select("jobId status requestType");
     for (const application of applications) {
+      jobIds.add(application.jobId.toString());
       applicationStatuses.set(
         application.jobId.toString(),
         application.status,
       );
+      applicationTypes.set(
+        application.jobId.toString(),
+        application.requestType,
+      );
+      applicationIds.set(application.jobId.toString(), application.id);
     }
 
     // Include direct assignments even if they were made without an application.
@@ -304,13 +310,13 @@ const getJobsForUser = async (
       assignedTechnicianProfileId: profile._id,
     }).select("_id");
     for (const job of assignedJobs) jobIds.add(job._id.toString());
-
-    jobs = await Problem.find({ _id: { $in: [...jobIds] } }).sort({
-      updatedAt: -1,
-      createdAt: -1,
-      _id: -1,
-    });
   }
+
+  jobs = await Problem.find({ _id: { $in: [...jobIds] } }).sort({
+    updatedAt: -1,
+    createdAt: -1,
+    _id: -1,
+  });
 
   if (jobs.length === 0) return [];
 
@@ -377,11 +383,16 @@ const getJobsForUser = async (
         technician: job.technicianRating?.score,
       },
       applicationStatus: applicationStatuses.get(job._id.toString()),
+      applicationRequestType: applicationTypes.get(job._id.toString()),
+      applicationId: applicationIds.get(job._id.toString()),
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     };
   });
 };
+
+const getTechnicianJobsForUser = (userId: string) =>
+  getJobsForUser(userId, "technician");
 
 export const getMatchingTechnicians = async (
   jobId: string,
@@ -402,10 +413,11 @@ export const getMatchingTechnicians = async (
   );
   return matches
     .filter((match) => match.offering !== undefined)
-    .map(({ profile }) => ({
+    .map(({ profile, ratings }) => ({
       id: profile.id,
       displayName: profile.displayName,
       description: profile.description,
+      ratings,
     }));
 };
 
@@ -438,4 +450,5 @@ export {
   deleteJob,
   getJobById,
   getJobsForUser,
+  getTechnicianJobsForUser,
 };

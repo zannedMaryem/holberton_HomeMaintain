@@ -5,6 +5,10 @@ import TechnicianProfile, {
 } from "../models/TechnicianProfile";
 import Service from "../models/Service";
 import { validateActiveServiceIds } from "./serviceService";
+import {
+  getTechnicianRatingSummaries,
+  getTechnicianRatingSummary,
+} from "./ratingSummaryService";
 import type { TunisiaGovernorateId } from "../constants/tunisiaGovernorates";
 
 export interface TechnicianProfileInput {
@@ -27,8 +31,10 @@ const withOfferingServices = async (
   const services = await Service.find({ _id: { $in: serviceIds } });
   const servicesById = new Map(services.map((service) => [service.id, service]));
 
+  const ratings = await getTechnicianRatingSummary(profile.id);
   return {
     profile,
+    ratings,
     offerings: profile.offerings.map((offering) => {
       const service = servicesById.get(offering.serviceId.toString());
       if (!service) {
@@ -129,9 +135,13 @@ export const getProfilesForServiceArea = async (
       },
     },
   }).sort({ displayName: 1 });
+  const ratingsByProfile = await getTechnicianRatingSummaries(
+    profiles.map((profile) => profile.id),
+  );
 
   return profiles.map((profile) => ({
     profile,
+    ratings: ratingsByProfile.get(profile.id) ?? { average: null, count: 0 },
     service: { id: service.id, name: service.name },
     offering: profile.offerings.find(
       (item) =>

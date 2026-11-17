@@ -11,6 +11,7 @@ import {
   apiRequest,
   type ApiEnvelope,
   type Governorate,
+  type Job,
   type ServiceItem,
   type TechnicianListing,
 } from "../api";
@@ -30,22 +31,41 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
   const [technicians, setTechnicians] = useState<TechnicianListing[]>([]);
   const [selectedTechnician, setSelectedTechnician] =
     useState<TechnicianListing | null>(null);
+  const [requestJob, setRequestJob] = useState<Job | null>(null);
+  const [sendingRequest, setSendingRequest] = useState(false);
+  const [requestedTechnicianId, setRequestedTechnicianId] = useState("");
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [loadingResults, setLoadingResults] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
+    const savedJobId = window.sessionStorage.getItem(
+      "homemaintain-find-pro-job-id",
+    );
     Promise.all([
       apiRequest<ApiEnvelope<ServiceItem[]>>("/services", token),
       apiRequest<ApiEnvelope<Governorate[]>>("/governorates", token),
+      savedJobId
+        ? apiRequest<ApiEnvelope<Job>>(
+            `/jobs/${encodeURIComponent(savedJobId)}`,
+            token,
+          ).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([serviceResponse, governorateResponse]) => {
+      .then(([serviceResponse, governorateResponse, savedJobResponse]) => {
         if (!active) return;
         setServices(serviceResponse.data);
         setGovernorates(governorateResponse.data);
-        setServiceId(serviceResponse.data[0]?.id ?? "");
-        setLocation(governorateResponse.data[0]?.id ?? "");
+        const job = savedJobResponse?.data.status === "open"
+          ? savedJobResponse.data
+          : null;
+        if (!job) {
+          window.sessionStorage.removeItem("homemaintain-find-pro-job-id");
+        }
+        setRequestJob(job);
+        setServiceId(job?.service.id ?? serviceResponse.data[0]?.id ?? "");
+        setLocation(job?.location ?? governorateResponse.data[0]?.id ?? "");
       })
       .catch((requestError: unknown) => {
         if (active) {
@@ -104,6 +124,31 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
     (technician) => technician.id === selectedTechnician?.id,
   );
 
+  const requestTechnician = async (technician: TechnicianListing) => {
+    if (!requestJob) return;
+    setSendingRequest(true);
+    setError("");
+    try {
+      await apiRequest(`/jobs/${encodeURIComponent(requestJob.id)}/applications`, token, {
+        method: "POST",
+        body: {
+          technicianProfileId: technician.id,
+          proposalMessage: `I would like to request your help with “${requestJob.title}”.`,
+        },
+      });
+      window.sessionStorage.removeItem("homemaintain-find-pro-job-id");
+      setRequestedTechnicianId(technician.id);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not send this request.",
+      );
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
   return (
     <div className="workspace-content find-pro-page">
       <div className="find-pro-heading">
@@ -111,6 +156,11 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
           <span className="eyebrow">LOCAL PROFESSIONALS</span>
           <h2>Find the right pro for your home.</h2>
           <p>Choose a service and governorate to see technicians working nearby.</p>
+          {requestJob && (
+            <p className="feedback feedback-success" role="status">
+              Showing technicians for “{requestJob.title}”. Choose a profile to send a job request.
+            </p>
+          )}
         </div>
         <div className="find-pro-trust-note">
           <ShieldCheck size={18} />
@@ -124,7 +174,7 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
           <select
             value={serviceId}
             onChange={(event) => setServiceId(event.target.value)}
-            disabled={loadingOptions}
+            disabled={loadingOptions || Boolean(requestJob)}
           >
             {services.map((service) => (
               <option value={service.id} key={service.id}>{service.name}</option>
@@ -136,7 +186,7 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
           <select
             value={location}
             onChange={(event) => setLocation(event.target.value)}
-            disabled={loadingOptions}
+            disabled={loadingOptions || Boolean(requestJob)}
           >
             {governorates.map((governorate) => (
               <option value={governorate.id} key={governorate.id}>
@@ -212,6 +262,11 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
                         <span><MapPin size={14} /> {formatGovernorate(location)}</span>
                         <span>{technician.service.name}</span>
                       </div>
+                      <div className="technician-rating-summary">
+                        {technician.ratings.average === null
+                          ? "No ratings yet"
+                          : `★ ${technician.ratings.average} · ${technician.ratings.count} ${technician.ratings.count === 1 ? "rating" : "ratings"}`}
+                      </div>
                     </div>
                     <button
                       className="button button-outline button-small"
@@ -249,29 +304,44 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
                 <strong>Service area</strong>
                 <span>{selectedTechnician.service.name} · {formatGovernorate(location)}</span>
               </div>
+              <div className="technician-rating-summary">
+                {selectedTechnician.ratings.average === null
+                  ? "No ratings yet"
+                  : `★ ${selectedTechnician.ratings.average} average from ${selectedTechnician.ratings.count} completed jobs`}
+              </div>
               <div className="pro-detail-info">
                 <ShieldCheck size={17} />
                 <p>
-                  HomeMaintain requests currently go through job proposals. Rates,
-                  direct booking, and reviews aren’t available yet.
+                  HomeMaintain requests are sent to this technician for review.
                 </p>
               </div>
               <button
                 className="button button-primary button-wide"
                 type="button"
-                onClick={onPostRepair}
+                onClick={() =>
+                  requestJob
+                    ? void requestTechnician(selectedTechnician)
+                    : onPostRepair()
+                }
+                disabled={sendingRequest || requestedTechnicianId === selectedTechnician.id}
               >
-                Post a repair request <ArrowRight size={16} />
+                {requestJob
+                  ? requestedTechnicianId === selectedTechnician.id
+                    ? "Request sent"
+                    : sendingRequest
+                      ? "Sending request…"
+                      : "Request this technician"
+                  : "Post a repair request"} <ArrowRight size={16} />
               </button>
             </>
           ) : (
             <div className="pro-detail-empty">
               <span className="workspace-card-icon"><UserRound size={21} /></span>
               <h3>Choose a professional</h3>
-              <p>Select a profile to review service details and continue to a repair request.</p>
+              <p>Select a profile to review service details{requestJob ? " and request help with your repair" : " and continue to a repair request"}.</p>
               <div className="pro-detail-info">
                 <ShieldCheck size={17} />
-                <p>Homeowners receive proposals through posted jobs; this page does not make direct bookings.</p>
+                <p>{requestJob ? "Send a request for this open job; the technician can accept or decline." : "Choose a professional before creating a repair job."}</p>
               </div>
             </div>
           )}

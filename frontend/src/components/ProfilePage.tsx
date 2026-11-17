@@ -14,6 +14,7 @@ import {
   type Governorate,
   type ServiceItem,
   type TechnicianProfile,
+  type RatingSummary,
 } from "../api";
 import TechnicianAvatar from "./TechnicianAvatar";
 
@@ -21,6 +22,7 @@ interface ProfilePageProps {
   user: Account;
   token: string;
   onUserUpdate: (user: Account) => void;
+  onTechnicianProfileStatusChange: (active: boolean) => void;
 }
 
 interface TechnicianProfileForm {
@@ -49,6 +51,7 @@ export default function ProfilePage({
   user,
   token,
   onUserUpdate,
+  onTechnicianProfileStatusChange,
 }: ProfilePageProps) {
   const [firstName, lastName] = splitName(user.fullName);
   const [nameForm, setNameForm] = useState({ firstName, lastName });
@@ -64,7 +67,8 @@ export default function ProfilePage({
   const [technicianForm, setTechnicianForm] = useState<TechnicianProfileForm>(
     () => emptyTechnicianForm(user),
   );
-  const [loadingProfile, setLoadingProfile] = useState(user.role === "technician");
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [homeownerRatings, setHomeownerRatings] = useState<RatingSummary | null>(null);
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [savingTechnician, setSavingTechnician] = useState(false);
@@ -84,10 +88,9 @@ export default function ProfilePage({
   }, [user.email, user.fullName]);
 
   useEffect(() => {
-    if (user.role !== "technician") return;
     let active = true;
     const loadProfile = async () => {
-      const [serviceResult, governorateResult, profileResult] =
+      const [serviceResult, governorateResult, profileResult, ratingResult] =
         await Promise.allSettled([
           apiRequest<ApiEnvelope<ServiceItem[]>>("/services", token),
           apiRequest<ApiEnvelope<Governorate[]>>("/governorates", token),
@@ -95,6 +98,7 @@ export default function ProfilePage({
             "/technicians/me/profile",
             token,
           ),
+          apiRequest<ApiEnvelope<RatingSummary>>("/users/me/ratings", token),
         ]);
       if (!active) return;
 
@@ -152,6 +156,9 @@ export default function ProfilePage({
         }
       } else {
         setTechnicianError(errorMessage(profileResult.reason));
+      }
+      if (user.role === "homeowner" && ratingResult.status === "fulfilled") {
+        setHomeownerRatings(ratingResult.value.data);
       }
       setLoadingProfile(false);
     };
@@ -308,6 +315,7 @@ export default function ProfilePage({
         },
       );
       setTechnicianProfile(response.data);
+      onTechnicianProfileStatusChange(response.data.active);
       setTechnicianNotice("Your professional profile was saved.");
     } catch (requestError) {
       setTechnicianError(errorMessage(requestError));
@@ -345,12 +353,14 @@ export default function ProfilePage({
           },
         );
         setTechnicianProfile(data);
+        onTechnicianProfileStatusChange(data.active);
         setTechnicianNotice("Your professional profile is active again.");
       } else {
         await apiRequest("/technicians/me/profile", token, {
           method: "DELETE",
         });
         setTechnicianProfile({ ...technicianProfile, active: false });
+        onTechnicianProfileStatusChange(false);
         setTechnicianNotice("Your profile is deactivated; your repair history remains available.");
       }
     } catch (requestError) {
@@ -480,13 +490,30 @@ export default function ProfilePage({
           </section>
         </div>
 
-        {user.role === "technician" && (
+        {homeownerRatings && (
+          <section className="profile-settings-card">
+            <div className="profile-section-heading">
+              <span className="workspace-card-icon"><UserRound size={20} /></span>
+              <div>
+                <h3>Homeowner ratings</h3>
+                <p>Ratings technicians have left after completed jobs.</p>
+              </div>
+            </div>
+            <p className="profile-rating-summary">
+              {homeownerRatings.average === null
+                ? "No ratings yet"
+                : `★ ${homeownerRatings.average} average · ${homeownerRatings.count} ${homeownerRatings.count === 1 ? "rating" : "ratings"}`}
+            </p>
+          </section>
+        )}
+
+        {user.role !== "admin" && (
           <section className="profile-settings-card technician-profile-settings">
             <div className="profile-section-heading">
               <span className="workspace-card-icon"><ShieldAlert size={20} /></span>
               <div>
                 <h3>Professional profile</h3>
-                <p>Manage the services and areas homeowners can find you for.</p>
+                <p>Set up the services and areas homeowners can find you for.</p>
               </div>
               {technicianProfile && (
                 <span className={technicianProfile.active ? "profile-active-pill" : "profile-inactive-pill"}>
@@ -652,6 +679,13 @@ export default function ProfilePage({
                   >
                     {technicianProfile.active ? "Deactivate profile" : "Reactivate profile"}
                   </button>
+                )}
+                {technicianProfile && (
+                  <p className="profile-rating-summary">
+                    {technicianProfile.ratings.average === null
+                      ? "No technician ratings yet"
+                      : `★ ${technicianProfile.ratings.average} average · ${technicianProfile.ratings.count} ${technicianProfile.ratings.count === 1 ? "rating" : "ratings"}`}
+                  </p>
                 )}
               </>
             )}

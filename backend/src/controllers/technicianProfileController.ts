@@ -134,6 +134,7 @@ const serializeProfile = (
   description: result.profile.description,
   photoDataUrl: result.profile.photoDataUrl,
   active: result.profile.active,
+  ratings: result.ratings,
   offerings: result.offerings,
   createdAt: result.profile.createdAt,
   updatedAt: result.profile.updatedAt,
@@ -161,13 +162,14 @@ export const listTechnicians = async (
     res.status(200).json({
       data: matches
         .filter((match) => match.offering !== undefined)
-        .map(({ profile, service, offering }) => ({
+        .map(({ profile, service, offering, ratings }) => ({
           id: profile.id,
           displayName: profile.displayName,
           description: profile.description,
           photoDataUrl: profile.photoDataUrl,
           service,
           governorates: offering?.governorates ?? [],
+          ratings,
         })),
     });
   } catch (error) {

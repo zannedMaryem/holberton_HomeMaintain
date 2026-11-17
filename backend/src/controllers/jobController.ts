@@ -8,6 +8,7 @@ import {
   getJobById,
   getMatchingTechnicians,
   getJobsForUser,
+  getTechnicianJobsForUser,
 } from "../services/jobService";
 import { getActiveService } from "../services/serviceService";
 import {
@@ -390,6 +391,27 @@ export const listMyJobs = async (
     res.status(200).json({ data: jobs });
   } catch (error) {
     console.error("List personal jobs error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const listMyTechnicianJobs = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+  if (req.user.role !== "homeowner" && req.user.role !== "technician") {
+    res.status(403).json({ message: "This account cannot view technician jobs" });
+    return;
+  }
+  try {
+    const jobs = await getTechnicianJobsForUser(req.user.id);
+    res.status(200).json({ data: jobs });
+  } catch (error) {
+    console.error("List technician jobs error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

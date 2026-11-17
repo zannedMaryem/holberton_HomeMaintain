@@ -17,6 +17,7 @@ import JobActions from "./JobActions";
 interface TechnicianRepairsPageProps {
   user: Account;
   token: string;
+  hasActiveTechnicianProfile: boolean;
   onFindJobs: () => void;
 }
 
@@ -30,6 +31,7 @@ const applicationLabel: Record<NonNullable<Job["applicationStatus"]>, string> = 
 export default function TechnicianRepairsPage({
   user,
   token,
+  hasActiveTechnicianProfile,
   onFindJobs,
 }: TechnicianRepairsPageProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -44,7 +46,10 @@ export default function TechnicianRepairsPage({
     setLoading(true);
     setError("");
     try {
-      const { data } = await apiRequest<ApiEnvelope<Job[]>>("/jobs/mine", token);
+      const { data } = await apiRequest<ApiEnvelope<Job[]>>(
+        "/jobs/technician/mine",
+        token,
+      );
       setJobs(data);
     } catch (requestError) {
       setError(
@@ -98,13 +103,15 @@ export default function TechnicianRepairsPage({
           >
             <RefreshCw size={15} className={loading ? "spin-icon" : ""} /> Refresh
           </button>
-          <button
-            className="button button-primary button-small"
-            type="button"
-            onClick={onFindJobs}
-          >
-            Find jobs <ArrowRight size={15} />
-          </button>
+          {hasActiveTechnicianProfile && (
+            <button
+              className="button button-primary button-small"
+              type="button"
+              onClick={onFindJobs}
+            >
+              Find jobs <ArrowRight size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -160,13 +167,15 @@ export default function TechnicianRepairsPage({
                 <span className="empty-icon"><BriefcaseBusiness size={22} /></span>
                 <strong>No repair jobs yet</strong>
                 <span>When you send a proposal or are assigned a job, it will appear here.</span>
-                <button
-                  className="button button-primary button-small"
-                  type="button"
-                  onClick={onFindJobs}
-                >
-                  Browse open jobs <ArrowRight size={15} />
-                </button>
+                {hasActiveTechnicianProfile && (
+                  <button
+                    className="button button-primary button-small"
+                    type="button"
+                    onClick={onFindJobs}
+                  >
+                    Browse open jobs <ArrowRight size={15} />
+                  </button>
+                )}
               </div>
             ) : visibleJobs.length === 0 ? (
               <div className="empty-workspace repairs-empty">
@@ -184,7 +193,9 @@ export default function TechnicianRepairsPage({
                           {job.status === "assigned"
                             ? "Assigned to you"
                             : job.status === "open"
-                              ? applicationLabel[job.applicationStatus ?? "pending"]
+                              ? job.applicationRequestType === "homeowner_request"
+                                ? "Homeowner requested you"
+                                : applicationLabel[job.applicationStatus ?? "pending"]
                               : job.status === "completed"
                                 ? "Completed"
                                 : "Closed"}
@@ -211,7 +222,9 @@ export default function TechnicianRepairsPage({
                         {job.status === "open" && job.applicationStatus === "pending"
                           ? "Your proposal is with the homeowner for review."
                           : job.applicationStatus === "cancelled"
-                            ? "This job was reopened. You can apply again from Find a job."
+                            ? hasActiveTechnicianProfile
+                              ? "This job was reopened. You can apply again from Find a job."
+                              : "This job was reopened. Reactivate your profile before applying again."
                             : job.applicationStatus === "declined"
                               ? "The homeowner selected another proposal."
                               : "This job is kept in your repair history."}

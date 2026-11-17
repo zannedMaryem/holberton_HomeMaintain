@@ -20,17 +20,21 @@ import { KitchenIllustration } from "./HomeMaintainArt";
 interface PersonalSpacePageProps {
   user: Account;
   token: string;
+  hasActiveTechnicianProfile: boolean;
   onNavigate: (page: AppPage) => void;
 }
 
 export default function PersonalSpacePage({
   user,
   token,
+  hasActiveTechnicianProfile,
   onNavigate,
 }: PersonalSpacePageProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [respondingTo, setRespondingTo] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -53,14 +57,45 @@ export default function PersonalSpacePage({
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [refreshVersion, token]);
 
+  const respondToRequest = async (
+    job: Job,
+    decision: "accept" | "decline",
+  ) => {
+    if (!job.applicationId) return;
+    setRespondingTo(job.id);
+    setError("");
+    try {
+      await apiRequest(
+        `/jobs/${encodeURIComponent(job.id)}/applications/${encodeURIComponent(job.applicationId)}`,
+        token,
+        { method: "PATCH", body: { decision } },
+      );
+      setRefreshVersion((version) => version + 1);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not update this job request.",
+      );
+    } finally {
+      setRespondingTo("");
+    }
+  };
+
+  const isHomeowner = user.role === "homeowner";
   const activeJobs = jobs.filter(
     (job) => job.status === "open" || job.status === "assigned",
   );
   const completedJobs = jobs.filter((job) => job.status === "completed");
+  const overviewJobs = jobs;
+  const incomingRequests = jobs.filter(
+    (job) =>
+      job.applicationRequestType === "homeowner_request" &&
+      job.applicationStatus === "pending",
+  );
   const firstName = user.fullName.trim().split(/\s+/)[0] || user.fullName;
-  const isHomeowner = user.role === "homeowner";
 
   return (
     <div className="workspace-content overview-page">
@@ -73,10 +108,26 @@ export default function PersonalSpacePage({
         <button
           className="button button-primary button-small"
           type="button"
-          onClick={() => onNavigate(isHomeowner ? "my-repairs" : "find-job")}
+          onClick={() =>
+            onNavigate(
+              isHomeowner
+                ? "my-repairs"
+                : hasActiveTechnicianProfile
+                  ? "find-job"
+                  : "profile",
+            )
+          }
         >
-          {isHomeowner ? <ClipboardPlus size={16} /> : <Search size={16} />}
-          {isHomeowner ? "Start a repair" : "Find a job"}
+          {isHomeowner || !hasActiveTechnicianProfile ? (
+            <ClipboardPlus size={16} />
+          ) : (
+            <Search size={16} />
+          )}
+          {isHomeowner
+            ? "Start a repair"
+            : hasActiveTechnicianProfile
+              ? "Find a job"
+              : "Set up your technician profile"}
         </button>
       </header>
 
@@ -96,9 +147,21 @@ export default function PersonalSpacePage({
           <button
             className="overview-hero-link"
             type="button"
-            onClick={() => onNavigate(isHomeowner ? "my-repairs" : "find-job")}
+            onClick={() =>
+              onNavigate(
+                isHomeowner
+                  ? "my-repairs"
+                  : hasActiveTechnicianProfile
+                    ? "find-job"
+                    : "profile",
+              )
+            }
           >
-            {isHomeowner ? "View your repairs" : "Browse available jobs"}
+            {isHomeowner
+              ? "View your repairs"
+              : hasActiveTechnicianProfile
+                ? "Browse available jobs"
+                : "Create your technician profile"}
             <ArrowRight size={16} />
           </button>
         </div>
@@ -129,7 +192,7 @@ export default function PersonalSpacePage({
             <span className="overview-stat-icon"><BriefcaseBusiness size={18} /></span>
             <div>
               <strong>{loading ? "—" : jobs.length}</strong>
-              <span>Total repair jobs</span>
+              <span>{isHomeowner ? "Repairs and requests" : "Jobs in your account"}</span>
             </div>
           </div>
           <div className="overview-stat-card">
@@ -165,7 +228,7 @@ export default function PersonalSpacePage({
         </div>
         {loading ? (
           <div className="overview-empty">Loading your repair activity…</div>
-        ) : jobs.length === 0 ? (
+        ) : overviewJobs.length === 0 ? (
           <div className="overview-empty overview-empty-card">
             <span className="overview-stat-icon"><BriefcaseBusiness size={18} /></span>
             <div>
@@ -179,14 +242,26 @@ export default function PersonalSpacePage({
             <button
               className="button button-outline button-small"
               type="button"
-              onClick={() => onNavigate(isHomeowner ? "my-repairs" : "find-job")}
+              onClick={() =>
+                onNavigate(
+                  isHomeowner
+                    ? "my-repairs"
+                    : hasActiveTechnicianProfile
+                      ? "find-job"
+                      : "profile",
+                )
+              }
             >
-              {isHomeowner ? "Start a repair" : "Find a job"} <ArrowRight size={14} />
+              {isHomeowner
+                ? "Start a repair"
+                : hasActiveTechnicianProfile
+                  ? "Find a job"
+                  : "Create a profile"} <ArrowRight size={14} />
             </button>
           </div>
         ) : (
           <div className="overview-repair-list">
-            {jobs.slice(0, 3).map((job) => (
+            {overviewJobs.slice(0, 3).map((job) => (
               <button
                 type="button"
                 className="overview-repair-row"
@@ -196,7 +271,7 @@ export default function PersonalSpacePage({
                 <span className={`overview-status-dot overview-status-${job.status}`} />
                 <span className="overview-repair-copy">
                   <strong>{job.title}</strong>
-                  <small>{job.service.name} <span>·</span> {formatStatus(job.status)}</small>
+                  <small>{job.service.name} <span>·</span> {formatJobActivity(job)}</small>
                 </span>
                 {job.status === "assigned" && job.scheduledDate ? (
                   <span className="overview-repair-date">
@@ -210,6 +285,56 @@ export default function PersonalSpacePage({
         )}
       </section>
 
+      {incomingRequests.length > 0 && (
+        <section className="overview-recent" aria-label="Pending job requests">
+          <div className="overview-section-heading">
+            <div>
+              <span className="eyebrow">PROFESSIONAL ACTIVITY</span>
+              <h2>Pending job requests</h2>
+            </div>
+            <button
+              className="overview-text-link"
+              type="button"
+              onClick={() => onNavigate("my-repairs")}
+            >
+              View requests <ArrowRight size={15} />
+            </button>
+          </div>
+          <div className="overview-repair-list">
+            {incomingRequests.slice(0, 3).map((job) => (
+              <article
+                className="overview-repair-row overview-request-row"
+                key={`request-${job.id}`}
+              >
+                <span className="overview-status-dot overview-status-open" />
+                <span className="overview-repair-copy">
+                  <strong>{job.title}</strong>
+                  <small>{job.service.name} <span>·</span> Homeowner request</small>
+                </span>
+                <span className="application-actions">
+                  <button
+                    className="button button-primary button-small"
+                    type="button"
+                    disabled={respondingTo === job.id}
+                    onClick={() => void respondToRequest(job, "accept")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="button button-outline button-small"
+                    type="button"
+                    disabled={respondingTo === job.id}
+                    onClick={() => void respondToRequest(job, "decline")}
+                  >
+                    Decline
+                  </button>
+                </span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="overview-shortcuts">
         <div className="overview-section-heading">
           <div>
@@ -221,12 +346,32 @@ export default function PersonalSpacePage({
           <button
             className="overview-shortcut-card"
             type="button"
-            onClick={() => onNavigate(isHomeowner ? "find-pro" : "find-job")}
+            onClick={() =>
+              onNavigate(
+                isHomeowner
+                  ? "find-pro"
+                  : hasActiveTechnicianProfile
+                    ? "find-job"
+                    : "profile",
+              )
+            }
           >
             <span className="overview-stat-icon"><Search size={18} /></span>
             <span>
-              <strong>{isHomeowner ? "Find a pro" : "Find a job"}</strong>
-              <small>{isHomeowner ? "Explore local professionals by service and area." : "Browse requests that match your skills."}</small>
+              <strong>
+                {isHomeowner
+                  ? "Find a pro"
+                  : hasActiveTechnicianProfile
+                    ? "Find a job"
+                    : "Create a technician profile"}
+              </strong>
+              <small>
+                {isHomeowner
+                  ? "Explore local professionals by service and area."
+                  : hasActiveTechnicianProfile
+                    ? "Browse requests that match your skills."
+                    : "Add your services and areas from profile management."}
+              </small>
             </span>
             <ArrowRight size={16} />
           </button>
@@ -253,6 +398,17 @@ function formatStatus(status: Job["status"]): string {
   if (status === "assigned") return "Technician assigned";
   if (status === "completed") return "Completed";
   return "Closed";
+}
+
+function formatJobActivity(job: Job): string {
+  if (
+    job.applicationRequestType === "homeowner_request" &&
+    job.applicationStatus === "pending"
+  ) {
+    return "Pending job request";
+  }
+  if (job.applicationStatus === "pending") return "Proposal pending";
+  return formatStatus(job.status);
 }
 
 function formatDate(date: string): string {

@@ -3428,6 +3428,21 @@ p {
   background: #f8f9f5;
 }
 
+.overview-request-row {
+  cursor: default;
+}
+
+.overview-request-row .application-actions {
+  margin-left: auto;
+}
+
+.technician-rating-summary,
+.profile-rating-summary {
+  color: var(--green-dark);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .overview-status-dot {
   width: 9px;
   height: 9px;

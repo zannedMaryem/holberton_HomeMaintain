@@ -10,28 +10,22 @@ import {
 } from "../utils/jobScheduling";
 import { isValidJobRatingScore } from "../utils/jobRating";
 
-type AssignedJobActorRole = "homeowner" | "technician";
-
 const getAssignedJobForActor = async (
   jobId: string,
   actorId: string,
-  actorRole: AssignedJobActorRole,
 ) => {
   const job = await Problem.findById(jobId);
   if (!job) throw new Error("Job not found");
 
-  if (actorRole === "homeowner") {
-    if (job.reporterId.toString() !== actorId) {
-      throw new Error("Unauthorized action");
-    }
-  } else {
-    const profile = await TechnicianProfile.findOne({ userId: actorId });
-    if (
-      !profile ||
-      job.assignedTechnicianProfileId?.toString() !== profile.id
-    ) {
-      throw new Error("Unauthorized action");
-    }
+  const isHomeowner = job.reporterId.toString() === actorId;
+  const profile = isHomeowner
+    ? null
+    : await TechnicianProfile.findOne({ userId: actorId });
+  if (
+    !isHomeowner &&
+    (!profile || job.assignedTechnicianProfileId?.toString() !== profile.id)
+  ) {
+    throw new Error("Unauthorized action");
   }
 
   if (job.status !== "assigned" || !job.assignedTechnicianProfileId) {
@@ -43,7 +37,6 @@ const getAssignedJobForActor = async (
 export const getJobAvailability = async (
   jobId: string,
   actorId: string,
-  actorRole: AssignedJobActorRole,
   date: string,
 ) => {
   if (!isValidJobDate(date)) {
@@ -53,7 +46,7 @@ export const getJobAvailability = async (
     throw new Error("date cannot be in the past");
   }
 
-  const job = await getAssignedJobForActor(jobId, actorId, actorRole);
+  const job = await getAssignedJobForActor(jobId, actorId);
   const otherReservations = await Problem.find({
     _id: { $ne: job._id },
     assignedTechnicianProfileId: job.assignedTechnicianProfileId,
@@ -76,7 +69,6 @@ export const getJobAvailability = async (
 export const reserveJobTimeSlot = async (
   jobId: string,
   actorId: string,
-  actorRole: AssignedJobActorRole,
   date: string,
   slot: JobTimeSlot,
 ): Promise<IProblem> => {
@@ -90,7 +82,7 @@ export const reserveJobTimeSlot = async (
     throw new Error("slot must be morning or afternoon");
   }
 
-  const job = await getAssignedJobForActor(jobId, actorId, actorRole);
+  const job = await getAssignedJobForActor(jobId, actorId);
   if (!getAvailableJobTimeSlots(date, new Set()).some((timeSlot) => timeSlot.id === slot)) {
     throw new Error("Selected time slot has already started");
   }
@@ -100,7 +92,6 @@ export const reserveJobTimeSlot = async (
     const updatedJob = await Problem.findOneAndUpdate(
       {
         _id: job._id,
-        ...(actorRole === "homeowner" ? { reporterId: actorId } : {}),
         status: "assigned",
         assignedTechnicianProfileId: job.assignedTechnicianProfileId,
       },
@@ -215,7 +206,6 @@ export const completeAssignedJob = async (
 export const submitJobRating = async (
   jobId: string,
   userId: string,
-  userRole: "homeowner" | "technician",
   score: number,
 ): Promise<IProblem> => {
   if (!isValidJobRatingScore(score)) {
@@ -229,10 +219,7 @@ export const submitJobRating = async (
   }
 
   let ratingField: "homeownerRating" | "technicianRating";
-  if (userRole === "homeowner") {
-    if (job.reporterId.toString() !== userId) {
-      throw new Error("Unauthorized action");
-    }
+  if (job.reporterId.toString() === userId) {
     ratingField = "homeownerRating";
   } else {
     const profile = await TechnicianProfile.findOne({ userId });

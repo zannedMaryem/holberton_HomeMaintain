@@ -12,24 +12,29 @@ interface AuthenticatedPageProps {
   page: AppPage;
   user: Account;
   token: string;
+  hasActiveTechnicianProfile: boolean;
   onNavigate: (page: AppPage) => void;
   onUserUpdate: (user: Account) => void;
+  onTechnicianProfileStatusChange: (active: boolean) => void;
 }
 
 export default function AuthenticatedPage({
   page,
   user,
   token,
+  hasActiveTechnicianProfile,
   onNavigate,
   onUserUpdate,
+  onTechnicianProfileStatusChange,
 }: AuthenticatedPageProps) {
   if (page === "my-repairs") {
     return user.role === "homeowner" ? (
-      <HomeownerWorkspace token={token} />
+      <HomeownerWorkspace user={user} token={token} onNavigate={onNavigate} />
     ) : user.role === "technician" ? (
       <TechnicianRepairsPage
         user={user}
         token={token}
+        hasActiveTechnicianProfile={hasActiveTechnicianProfile}
         onFindJobs={() => onNavigate("find-job")}
       />
     ) : (
@@ -46,8 +51,13 @@ export default function AuthenticatedPage({
   }
 
   if (page === "find-job") {
-    return user.role === "technician" ? (
-      <FindJobPage token={token} onManageProfile={() => onNavigate("profile")} />
+    return hasActiveTechnicianProfile &&
+      (user.role === "homeowner" || user.role === "technician") ? (
+      <FindJobPage
+        token={token}
+        userId={user.id}
+        onManageProfile={() => onNavigate("profile")}
+      />
     ) : (
       <UnavailablePage title="Find a job" />
     );
@@ -67,6 +77,7 @@ export default function AuthenticatedPage({
         user={user}
         token={token}
         onUserUpdate={onUserUpdate}
+        onTechnicianProfileStatusChange={onTechnicianProfileStatusChange}
       />
     );
   }
@@ -79,6 +90,7 @@ export default function AuthenticatedPage({
       <PersonalSpacePage
         user={user}
         token={token}
+        hasActiveTechnicianProfile={hasActiveTechnicianProfile}
         onNavigate={onNavigate}
       />
     );

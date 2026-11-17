@@ -5,9 +5,12 @@ import {
   updatePassword,
   updateEmail,
   deleteAccount,
+  getMyRatingSummary,
 } from "../controllers/userController";
 
 const router = Router();
+
+router.get("/me/ratings", authenticate, getMyRatingSummary);
 
 router.patch("/me", authenticate, updateProfile);
 

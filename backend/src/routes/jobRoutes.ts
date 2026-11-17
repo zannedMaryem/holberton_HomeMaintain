@@ -8,6 +8,7 @@ import {
   getJob,
   getJobMatchingTechnicians,
   listMyJobs,
+  listMyTechnicianJobs,
 } from "../controllers/jobController";
 import {
   assignJobTechnician,
@@ -46,12 +47,18 @@ router.param("applicationId", (_req, res, next, applicationId) => {
 });
 
 router.get(
+  "/technician/mine",
+  authenticate,
+  authorize("homeowner", "technician"),
+  listMyTechnicianJobs,
+);
+router.get(
   "/mine",
   authenticate,
   authorize("homeowner", "technician"),
   listMyJobs,
 );
-router.get("/", authenticate, authorize("technician"), listOpenJobs);
+router.get("/", authenticate, authorize("homeowner", "technician"), listOpenJobs);
 router.get(
   "/:jobId/technicians",
   authenticate,
@@ -67,13 +74,13 @@ router.get(
 router.post(
   "/:jobId/applications",
   authenticate,
-  authorize("technician"),
+  authorize("homeowner", "technician"),
   postJobApplication,
 );
 router.patch(
   "/:jobId/applications/:applicationId",
   authenticate,
-  authorize("homeowner"),
+  authorize("homeowner", "technician"),
   decideJobApplication,
 );
 router.patch(
@@ -103,7 +110,7 @@ router.patch(
 router.patch(
   "/:jobId/complete",
   authenticate,
-  authorize("technician"),
+  authorize("homeowner", "technician"),
   markAssignedJobComplete,
 );
 router.post(

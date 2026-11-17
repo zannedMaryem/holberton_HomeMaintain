@@ -6,10 +6,13 @@ export type JobApplicationStatus =
   | "declined"
   | "cancelled";
 
+export type JobApplicationType = "technician_proposal" | "homeowner_request";
+
 export interface IJobApplication extends Document {
   jobId: mongoose.Types.ObjectId;
   technicianProfileId: mongoose.Types.ObjectId;
   proposalMessage: string;
+  requestType: JobApplicationType;
   status: JobApplicationStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +36,12 @@ const jobApplicationSchema = new Schema<IJobApplication>(
       trim: true,
       minlength: 2,
       maxlength: 2000,
+    },
+    requestType: {
+      type: String,
+      enum: ["technician_proposal", "homeowner_request"],
+      default: "technician_proposal",
+      required: true,
     },
     status: {
       type: String,

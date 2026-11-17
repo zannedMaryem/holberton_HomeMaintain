@@ -10,16 +10,22 @@ import {
 } from "lucide-react";
 import {
   apiRequest,
+  type Account,
   type ApiEnvelope,
   type Governorate,
   type Job,
   type JobApplication,
   type ServiceItem,
+  type TechnicianProfile,
 } from "../api";
+import type { AppPage } from "../navigation";
 import JobActions from "./JobActions";
+import TechnicianRepairsPage from "./TechnicianRepairsPage";
 
 interface HomeownerWorkspaceProps {
+  user: Account;
   token: string;
+  onNavigate: (page: AppPage) => void;
 }
 
 interface TrackedJob {
@@ -40,7 +46,9 @@ const statusLabel: Record<Job["status"], string> = {
 };
 
 export default function HomeownerWorkspace({
+  user,
   token,
+  onNavigate,
 }: HomeownerWorkspaceProps) {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [governorates, setGovernorates] = useState<Governorate[]>([]);
@@ -55,6 +63,9 @@ export default function HomeownerWorkspace({
   const [catalogError, setCatalogError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [hasTechnicianProfile, setHasTechnicianProfile] = useState(false);
+  const [hasActiveTechnicianProfile, setHasActiveTechnicianProfile] =
+    useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "completed" | "closed"
@@ -88,6 +99,29 @@ export default function HomeownerWorkspace({
     };
   }, [token]);
 
+  useEffect(() => {
+    let active = true;
+    apiRequest<ApiEnvelope<TechnicianProfile>>(
+      "/technicians/me/profile",
+      token,
+    )
+      .then(({ data }) => {
+        if (active) {
+          setHasTechnicianProfile(true);
+          setHasActiveTechnicianProfile(data.active);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHasTechnicianProfile(false);
+          setHasActiveTechnicianProfile(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
   const refreshJobs = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -97,29 +131,31 @@ export default function HomeownerWorkspace({
         token,
       );
       const result = await Promise.all(
-        jobList.map(async (job): Promise<TrackedJob> => {
-          if (job.status !== "open" && job.status !== "assigned") {
-            return { job, applications: [] };
-          }
-          try {
-            const applicationResponse = await apiRequest<
-              ApiEnvelope<JobApplication[]>
-            >(`/jobs/${encodeURIComponent(job.id)}/applications`, token);
-            return {
-              job,
-              applications: applicationResponse.data,
-            };
-          } catch (requestError) {
-            return {
-              job,
-              applications: [],
-              loadError:
-                requestError instanceof Error
-                  ? requestError.message
-                  : "Could not load this saved job.",
-            };
-          }
-        }),
+        jobList
+          .filter((job) => job.reporter?.id === user.id)
+          .map(async (job): Promise<TrackedJob> => {
+            if (job.status !== "open" && job.status !== "assigned") {
+              return { job, applications: [] };
+            }
+            try {
+              const applicationResponse = await apiRequest<
+                ApiEnvelope<JobApplication[]>
+              >(`/jobs/${encodeURIComponent(job.id)}/applications`, token);
+              return {
+                job,
+                applications: applicationResponse.data,
+              };
+            } catch (requestError) {
+              return {
+                job,
+                applications: [],
+                loadError:
+                  requestError instanceof Error
+                    ? requestError.message
+                    : "Could not load this saved job.",
+              };
+            }
+          }),
       );
       setJobs(result);
     } catch (requestError) {
@@ -132,7 +168,7 @@ export default function HomeownerWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, user.id]);
 
   useEffect(() => {
     void refreshJobs();
@@ -418,6 +454,22 @@ export default function HomeownerWorkspace({
                     </div>
 
                     {job.status === "open" && (
+                      <button
+                        className="button button-outline button-small"
+                        type="button"
+                        onClick={() => {
+                          window.sessionStorage.setItem(
+                            "homemaintain-find-pro-job-id",
+                            job.id,
+                          );
+                          onNavigate("find-pro");
+                        }}
+                      >
+                        <UserRound size={15} /> Find available technicians
+                      </button>
+                    )}
+
+                    {job.status === "open" && (
                       <div className="applications-block">
                         <div className="applications-heading">
                           <strong>Technician applications</strong>
@@ -436,7 +488,12 @@ export default function HomeownerWorkspace({
                                 <span>{application.technician.description}</span>
                                 <p>{application.proposalMessage}</p>
                               </div>
-                              {application.status === "pending" ? (
+                              {application.status === "pending" &&
+                              application.requestType === "homeowner_request" ? (
+                                <span className="application-status">
+                                  Request sent · awaiting technician
+                                </span>
+                              ) : application.status === "pending" ? (
                                 <div className="application-actions">
                                   <button
                                     className="button button-primary button-small"
@@ -611,6 +668,14 @@ export default function HomeownerWorkspace({
           </div>
         )}
       </section>
+      {hasTechnicianProfile && (
+        <TechnicianRepairsPage
+          user={user}
+          token={token}
+          hasActiveTechnicianProfile={hasActiveTechnicianProfile}
+          onFindJobs={() => onNavigate("find-job")}
+        />
+      )}
     </div>
   );
 }

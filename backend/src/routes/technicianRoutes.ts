@@ -14,19 +14,19 @@ router.get("/", authenticate, authorize("homeowner"), listTechnicians);
 router.get(
   "/me/profile",
   authenticate,
-  authorize("technician"),
+  authorize("homeowner", "technician"),
   getMyTechnicianProfile,
 );
 router.put(
   "/me/profile",
   authenticate,
-  authorize("technician"),
+  authorize("homeowner", "technician"),
   putMyTechnicianProfile,
 );
 router.delete(
   "/me/profile",
   authenticate,
-  authorize("technician"),
+  authorize("homeowner", "technician"),
   deactivateMyTechnicianProfile,
 );
 

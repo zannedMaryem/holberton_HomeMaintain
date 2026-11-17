@@ -7,6 +7,24 @@ import {
 } from "../services/userService";
 
 import { domainCanReceiveEmail } from "../services/emailValidation";
+import { getHomeownerRatingSummary } from "../services/ratingSummaryService";
+
+export const getMyRatingSummary = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: "Authentication required" });
+    return;
+  }
+  try {
+    const ratings = await getHomeownerRatingSummary(req.user.id);
+    res.status(200).json({ data: ratings });
+  } catch (error) {
+    console.error("Get homeowner ratings error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
