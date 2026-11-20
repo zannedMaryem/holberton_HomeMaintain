@@ -31,16 +31,30 @@ export default function PersonalSpacePage({
   onNavigate,
 }: PersonalSpacePageProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [availableJobs, setAvailableJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [respondingTo, setRespondingTo] = useState("");
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
 
   useEffect(() => {
     let active = true;
-    apiRequest<ApiEnvelope<Job[]>>("/jobs/mine", token)
-      .then(({ data }) => {
-        if (active) setJobs(data);
+    Promise.all([
+      apiRequest<ApiEnvelope<Job[]>>("/jobs/mine", token),
+      hasActiveTechnicianProfile
+        ? apiRequest<ApiEnvelope<Job[]>>("/jobs?limit=3", token)
+        : Promise.resolve({ data: [] as Job[] }),
+    ])
+      .then(([mineResponse, availableResponse]) => {
+        if (!active) return;
+        setJobs(mineResponse.data);
+        setAvailableJobs(
+          availableResponse.data.filter(
+            (job) => job.reporter?.id !== user.id &&
+              !mineResponse.data.some((mine) => mine.id === job.id),
+          ),
+        );
       })
       .catch((requestError: unknown) => {
         if (active) {
@@ -57,7 +71,7 @@ export default function PersonalSpacePage({
     return () => {
       active = false;
     };
-  }, [refreshVersion, token]);
+  }, [hasActiveTechnicianProfile, refreshVersion, token, user.id]);
 
   const respondToRequest = async (
     job: Job,
@@ -95,7 +109,25 @@ export default function PersonalSpacePage({
       job.applicationRequestType === "homeowner_request" &&
       job.applicationStatus === "pending",
   );
+  const currentJobs = jobs.filter((job) =>
+    isHomeowner ? job.status === "open" || job.status === "assigned" : job.status === "assigned",
+  );
+  const heroSlides = [
+    ...incomingRequests.map((job) => ({ kind: "pending" as const, job })),
+    ...currentJobs.slice(0, 3).map((job) => ({ kind: "current" as const, job })),
+    ...availableJobs.map((job) => ({ kind: "available" as const, job })),
+  ];
+  const activeHeroSlide = heroSlides[heroSlideIndex % Math.max(heroSlides.length, 1)];
   const firstName = user.fullName.trim().split(/\s+/)[0] || user.fullName;
+
+  useEffect(() => {
+    setHeroSlideIndex(0);
+    if (heroSlides.length < 2) return;
+    const timer = window.setInterval(() => {
+      setHeroSlideIndex((index) => (index + 1) % heroSlides.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [heroSlides.length]);
 
   return (
     <div className="workspace-content overview-page">
@@ -103,7 +135,7 @@ export default function PersonalSpacePage({
         <div>
           <span className="eyebrow">YOUR HOMEMAINTAIN ACCOUNT</span>
           <h1>Overview</h1>
-          <p>Welcome back, {firstName}. Here’s what’s happening with your home.</p>
+          <p>Welcome back, {firstName}.</p>
         </div>
         <button
           className="button button-primary button-small"
@@ -135,35 +167,110 @@ export default function PersonalSpacePage({
 
       <section className="overview-hero">
         <div className="overview-hero-copy">
-          <span className="overview-hero-kicker">
-            {isHomeowner ? "HOME CARE, MADE SIMPLE" : "YOUR WORKSPACE"}
-          </span>
-          <h2>{isHomeowner ? "Your home, in good hands." : "Your work, all in one place."}</h2>
-          <p>
-            {isHomeowner
-              ? "Keep track of repairs, find trusted local professionals, and take the next step when you’re ready."
-              : "Keep up with your proposals, find new local work, and manage your professional profile."}
-          </p>
-          <button
-            className="overview-hero-link"
-            type="button"
-            onClick={() =>
-              onNavigate(
-                isHomeowner
-                  ? "my-repairs"
+          {activeHeroSlide ? (
+            <>
+              <span className="overview-hero-kicker">
+                {activeHeroSlide.kind === "pending"
+                  ? `PENDING JOB REQUEST${incomingRequests.length === 1 ? "" : "S"}`
+                  : activeHeroSlide.kind === "current"
+                    ? "CURRENT OPEN JOBS"
+                    : "RECENT AVAILABLE JOBS"}
+              </span>
+              <h2>{activeHeroSlide.job.title}</h2>
+              <p>
+                {activeHeroSlide.job.service.name} · {activeHeroSlide.job.location}
+                {activeHeroSlide.kind === "pending"
+                  ? " · A homeowner is requesting your help."
+                  : activeHeroSlide.kind === "available"
+                    ? " · A new job is available in your area."
+                    : ` · ${formatJobActivity(activeHeroSlide.job)}`}
+              </p>
+              {activeHeroSlide.kind === "pending" ? (
+                <div className="application-actions overview-hero-actions">
+                  <button
+                    className="button button-primary button-small"
+                    type="button"
+                    disabled={respondingTo === activeHeroSlide.job.id}
+                    onClick={() => void respondToRequest(activeHeroSlide.job, "accept")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="button button-outline button-small"
+                    type="button"
+                    disabled={respondingTo === activeHeroSlide.job.id}
+                    onClick={() => void respondToRequest(activeHeroSlide.job, "decline")}
+                  >
+                    Decline
+                  </button>
+                  <button
+                    className="overview-hero-link"
+                    type="button"
+                    onClick={() => onNavigate("my-repairs")}
+                  >
+                    View all repairs <ArrowRight size={16} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="overview-hero-link"
+                  type="button"
+                  onClick={() =>
+                    onNavigate(activeHeroSlide.kind === "available" ? "find-job" : "my-repairs")
+                  }
+                >
+                  {activeHeroSlide.kind === "available" ? "Browse available jobs" : "View your repairs"}
+                  <ArrowRight size={16} />
+                </button>
+              )}
+              {heroSlides.length > 1 && (
+                <div className="overview-hero-indicators" aria-label="Overview cards">
+                  {heroSlides.map((slide, index) => (
+                    <button
+                      type="button"
+                      key={`${slide.kind}-${slide.job.id}`}
+                      className={index === heroSlideIndex ? "is-active" : ""}
+                      aria-label={`Show ${slide.kind} job ${index + 1}`}
+                      aria-current={index === heroSlideIndex ? "true" : undefined}
+                      onClick={() => setHeroSlideIndex(index)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="overview-hero-kicker">
+                {isHomeowner ? "HOME CARE, MADE SIMPLE" : "YOUR WORKSPACE"}
+              </span>
+              <h2>{isHomeowner ? "Your home, in good hands." : "Your work, all in one place."}</h2>
+              <p>
+                {isHomeowner
+                  ? "Keep track of repairs, find trusted local professionals, and take the next step when you’re ready."
+                  : "Keep up with your proposals, find new local work, and manage your professional profile."}
+              </p>
+              <button
+                className="overview-hero-link"
+                type="button"
+                onClick={() =>
+                  onNavigate(
+                    isHomeowner
+                      ? "my-repairs"
+                      : hasActiveTechnicianProfile
+                        ? "find-job"
+                        : "profile",
+                  )
+                }
+              >
+                {isHomeowner
+                  ? "View your repairs"
                   : hasActiveTechnicianProfile
-                    ? "find-job"
-                    : "profile",
-              )
-            }
-          >
-            {isHomeowner
-              ? "View your repairs"
-              : hasActiveTechnicianProfile
-                ? "Browse available jobs"
-                : "Create your technician profile"}
-            <ArrowRight size={16} />
-          </button>
+                    ? "Browse available jobs"
+                    : "Create your technician profile"}
+                <ArrowRight size={16} />
+              </button>
+            </>
+          )}
         </div>
         <div className="overview-hero-art" aria-hidden="true">
           <KitchenIllustration />
@@ -284,56 +391,6 @@ export default function PersonalSpacePage({
           </div>
         )}
       </section>
-
-      {incomingRequests.length > 0 && (
-        <section className="overview-recent" aria-label="Pending job requests">
-          <div className="overview-section-heading">
-            <div>
-              <span className="eyebrow">PROFESSIONAL ACTIVITY</span>
-              <h2>Pending job requests</h2>
-            </div>
-            <button
-              className="overview-text-link"
-              type="button"
-              onClick={() => onNavigate("my-repairs")}
-            >
-              View requests <ArrowRight size={15} />
-            </button>
-          </div>
-          <div className="overview-repair-list">
-            {incomingRequests.slice(0, 3).map((job) => (
-              <article
-                className="overview-repair-row overview-request-row"
-                key={`request-${job.id}`}
-              >
-                <span className="overview-status-dot overview-status-open" />
-                <span className="overview-repair-copy">
-                  <strong>{job.title}</strong>
-                  <small>{job.service.name} <span>·</span> Homeowner request</small>
-                </span>
-                <span className="application-actions">
-                  <button
-                    className="button button-primary button-small"
-                    type="button"
-                    disabled={respondingTo === job.id}
-                    onClick={() => void respondToRequest(job, "accept")}
-                  >
-                    Accept
-                  </button>
-                  <button
-                    className="button button-outline button-small"
-                    type="button"
-                    disabled={respondingTo === job.id}
-                    onClick={() => void respondToRequest(job, "decline")}
-                  >
-                    Decline
-                  </button>
-                </span>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="overview-shortcuts">
         <div className="overview-section-heading">

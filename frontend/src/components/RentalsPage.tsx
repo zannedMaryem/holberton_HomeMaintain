@@ -23,6 +23,7 @@ import {
   type RentalBooking,
   type RentalEquipment,
 } from "../api";
+import { RENTAL_EQUIPMENT_CATEGORIES } from "../rentalCategories";
 
 interface RentalsPageProps {
   user: Account;
@@ -426,16 +427,24 @@ export default function RentalsPage({ user, token }: RentalsPageProps) {
             </label>
             <label>
               Category
-              <input
+              <select
                 required
-                minLength={2}
-                maxLength={50}
                 value={form.category}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, category: event.target.value }))
                 }
-                placeholder="e.g. Power tools"
-              />
+              >
+                <option value="">Select a category</option>
+                {form.category &&
+                  !RENTAL_EQUIPMENT_CATEGORIES.includes(
+                    form.category as (typeof RENTAL_EQUIPMENT_CATEGORIES)[number],
+                  ) && (
+                    <option value={form.category}>{form.category} (existing category)</option>
+                  )}
+                {RENTAL_EQUIPMENT_CATEGORIES.map((category) => (
+                  <option value={category} key={category}>{category}</option>
+                ))}
+              </select>
             </label>
             <label>
               Price per day (TND)
@@ -566,18 +575,20 @@ export default function RentalsPage({ user, token }: RentalsPageProps) {
                       <span className="availability-preview">{governorateName(item.location)}</span>
                     </div>
                     <div className="equipment-owner">Listed by {item.ownerName}</div>
-                    <div className="rental-card-actions">
-                      <button
-                        className="equipment-view-link"
-                        type="button"
-                        onClick={() => {
-                          setSelectedId(item.id);
-                          setSelectedDates([]);
-                          setReschedulingBookingId("");
-                        }}
-                      >
-                        Check availability <span>→</span>
-                      </button>
+                    <div className={`rental-card-actions ${isOwner(item) ? "rental-card-actions-owner" : ""}`}>
+                      {!isOwner(item) && (
+                        <button
+                          className="equipment-view-link"
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(item.id);
+                            setSelectedDates([]);
+                            setReschedulingBookingId("");
+                          }}
+                        >
+                          Check availability <span>→</span>
+                        </button>
+                      )}
                       {isOwner(item) && (
                         <span className="rental-owner-actions">
                           <button

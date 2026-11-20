@@ -15,6 +15,7 @@ interface AuthenticatedPageProps {
   hasActiveTechnicianProfile: boolean;
   onNavigate: (page: AppPage) => void;
   onUserUpdate: (user: Account) => void;
+  onTokenUpdate: (token: string) => void;
   onTechnicianProfileStatusChange: (active: boolean) => void;
 }
 
@@ -25,6 +26,7 @@ export default function AuthenticatedPage({
   hasActiveTechnicianProfile,
   onNavigate,
   onUserUpdate,
+  onTokenUpdate,
   onTechnicianProfileStatusChange,
 }: AuthenticatedPageProps) {
   if (page === "my-repairs") {
@@ -77,6 +79,7 @@ export default function AuthenticatedPage({
         user={user}
         token={token}
         onUserUpdate={onUserUpdate}
+        onTokenUpdate={onTokenUpdate}
         onTechnicianProfileStatusChange={onTechnicianProfileStatusChange}
       />
     );

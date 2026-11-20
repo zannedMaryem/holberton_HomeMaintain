@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import User from "../models/User";
 import {
   isTunisiaGovernorateId,
   type TunisiaGovernorateId,
@@ -215,9 +217,26 @@ export const putMyTechnicianProfile = async (
 
   try {
     const profile = await saveTechnicianProfile(req.user.id, input);
+    const user = await User.findById(req.user.id).select("firstName lastName email role");
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!user || !jwtSecret) {
+      throw new Error(user ? "JWT_SECRET is not defined" : "User not found");
+    }
+    const token = jwt.sign(
+      { userId: user._id.toString(), role: user.role },
+      jwtSecret,
+      { expiresIn: "1d" },
+    );
     res.status(200).json({
       message: "Technician profile saved successfully",
       data: serializeProfile(profile),
+      token,
+      user: {
+        id: user._id.toString(),
+        fullName: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     if (

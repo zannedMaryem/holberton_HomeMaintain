@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BadgeCheck,
@@ -32,6 +32,9 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
   const [selectedTechnician, setSelectedTechnician] =
     useState<TechnicianListing | null>(null);
   const [requestJob, setRequestJob] = useState<Job | null>(null);
+  const [showJobRequestForm, setShowJobRequestForm] = useState(false);
+  const [requestTitle, setRequestTitle] = useState("");
+  const [requestDescription, setRequestDescription] = useState("");
   const [sendingRequest, setSendingRequest] = useState(false);
   const [requestedTechnicianId, setRequestedTechnicianId] = useState("");
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -124,27 +127,73 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
     (technician) => technician.id === selectedTechnician?.id,
   );
 
-  const requestTechnician = async (technician: TechnicianListing) => {
-    if (!requestJob) return;
+  const sendTechnicianRequest = async (
+    technician: TechnicianListing,
+    job: Job,
+  ) => {
     setSendingRequest(true);
     setError("");
     try {
-      await apiRequest(`/jobs/${encodeURIComponent(requestJob.id)}/applications`, token, {
+      await apiRequest(`/jobs/${encodeURIComponent(job.id)}/applications`, token, {
         method: "POST",
         body: {
           technicianProfileId: technician.id,
-          proposalMessage: `I would like to request your help with “${requestJob.title}”.`,
+          proposalMessage: `I would like to request your help with “${job.title}”.`,
         },
       });
       window.sessionStorage.removeItem("homemaintain-find-pro-job-id");
       setRequestedTechnicianId(technician.id);
+      setShowJobRequestForm(false);
+      return true;
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : "Could not send this request.",
       );
+      return false;
     } finally {
+      setSendingRequest(false);
+    }
+  };
+
+  const requestTechnician = async (technician: TechnicianListing) => {
+    if (requestJob) {
+      await sendTechnicianRequest(technician, requestJob);
+    } else {
+      setShowJobRequestForm(true);
+    }
+  };
+
+  const createJobAndRequestTechnician = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    if (!selectedTechnician) return;
+    setSendingRequest(true);
+    setError("");
+    try {
+      const response = await apiRequest<ApiEnvelope<Job>>("/jobs", token, {
+        method: "POST",
+        body: {
+          title: requestTitle.trim(),
+          description: requestDescription.trim(),
+          serviceId: selectedTechnician.service.id,
+          location,
+        },
+      });
+      const job = response.data;
+      setRequestJob(job);
+      window.sessionStorage.setItem("homemaintain-find-pro-job-id", job.id);
+      setShowJobRequestForm(false);
+      setSendingRequest(false);
+      await sendTechnicianRequest(selectedTechnician, job);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not create the repair request.",
+      );
       setSendingRequest(false);
     }
   };
@@ -272,7 +321,10 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
                       className="button button-outline button-small"
                       type="button"
                       onClick={() =>
-                        setSelectedTechnician(isSelected ? null : technician)
+                        {
+                          setSelectedTechnician(isSelected ? null : technician);
+                          setShowJobRequestForm(false);
+                        }
                       }
                     >
                       {isSelected ? "Selected" : "View profile"}
@@ -315,24 +367,68 @@ export default function FindProPage({ token, onPostRepair }: FindProPageProps) {
                   HomeMaintain requests are sent to this technician for review.
                 </p>
               </div>
-              <button
-                className="button button-primary button-wide"
-                type="button"
-                onClick={() =>
-                  requestJob
-                    ? void requestTechnician(selectedTechnician)
-                    : onPostRepair()
-                }
-                disabled={sendingRequest || requestedTechnicianId === selectedTechnician.id}
-              >
-                {requestJob
-                  ? requestedTechnicianId === selectedTechnician.id
-                    ? "Request sent"
-                    : sendingRequest
-                      ? "Sending request…"
-                      : "Request this technician"
-                  : "Post a repair request"} <ArrowRight size={16} />
-              </button>
+              {showJobRequestForm && !requestJob ? (
+                <form
+                  className="form-stack find-pro-request-form"
+                  onSubmit={createJobAndRequestTechnician}
+                >
+                  <label>
+                    Job title
+                    <input
+                      required
+                      minLength={8}
+                      maxLength={72}
+                      value={requestTitle}
+                      onChange={(event) => setRequestTitle(event.target.value)}
+                      placeholder="e.g. Kitchen sink is leaking"
+                    />
+                  </label>
+                  <label>
+                    Describe the repair
+                    <textarea
+                      required
+                      minLength={2}
+                      maxLength={2000}
+                      rows={3}
+                      value={requestDescription}
+                      onChange={(event) => setRequestDescription(event.target.value)}
+                      placeholder="Describe what needs fixing."
+                    />
+                  </label>
+                  <div className="workspace-heading-actions">
+                    <button
+                      className="button button-outline button-small"
+                      type="button"
+                      onClick={() => setShowJobRequestForm(false)}
+                      disabled={sendingRequest}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button button-primary button-small"
+                      type="submit"
+                      disabled={sendingRequest}
+                    >
+                      {sendingRequest ? "Sending request…" : "Create job & request pro"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  className="button button-primary button-wide"
+                  type="button"
+                  onClick={() => void requestTechnician(selectedTechnician)}
+                  disabled={sendingRequest || requestedTechnicianId === selectedTechnician.id}
+                >
+                  {requestJob
+                    ? requestedTechnicianId === selectedTechnician.id
+                      ? "Request sent"
+                      : sendingRequest
+                        ? "Sending request…"
+                        : "Request this technician"
+                    : "Create a job request for this pro"} <ArrowRight size={16} />
+                </button>
+              )}
             </>
           ) : (
             <div className="pro-detail-empty">

@@ -246,6 +246,11 @@ function App() {
     setMobileMenuOpen(false);
   };
 
+  const updateSessionToken = (sessionToken: string) => {
+    sessionStorage.setItem("homemaintain-token", sessionToken);
+    setToken(sessionToken);
+  };
+
   const startRepair = () => {
     if (user) {
       navigate("my-repairs");
@@ -381,6 +386,7 @@ function App() {
                 hasActiveTechnicianProfile={technicianProfileAccess === "active"}
                 onNavigate={navigate}
                 onUserUpdate={setUser}
+                onTokenUpdate={updateSessionToken}
                 onTechnicianProfileStatusChange={(active) =>
                   setTechnicianProfileAccess(active ? "active" : "inactive")
                 }

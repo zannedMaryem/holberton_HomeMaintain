@@ -3,6 +3,7 @@ import TechnicianProfile, {
   type ITechnicianProfile,
   type IServiceOffering,
 } from "../models/TechnicianProfile";
+import User from "../models/User";
 import Service from "../models/Service";
 import { validateActiveServiceIds } from "./serviceService";
 import {
@@ -100,6 +101,14 @@ export const saveTechnicianProfile = async (
     { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
   );
 
+  const roleUpdate = await User.updateOne(
+    { _id: userId, role: { $in: ["homeowner", "technician"] } },
+    { $set: { role: "technician" } },
+  );
+  if (roleUpdate.matchedCount === 0) {
+    throw new Error("User not found or cannot become a technician");
+  }
+
   return withOfferingServices(profile);
 };
 
@@ -151,5 +160,3 @@ export const getProfilesForServiceArea = async (
   }));
 };
 
-//! add update technicien profile( technicien can update name, service, and location of service), 
-//! activate/deactivate profile and delete profile

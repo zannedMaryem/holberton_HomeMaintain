@@ -10,7 +10,7 @@ import rentalRoutes from "./routes/rentalRoutes";
 
 const app = express();
 
-// The Netlify site and Render API use different origins in production.
+// The hosted frontend and Render API use different origins in production.
 // Set CORS_ORIGIN to the frontend origin (or a comma-separated list).
 app.use((req, res, next) => {
   const origin = req.headers.origin;

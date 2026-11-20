@@ -83,7 +83,9 @@ export default function HomeownerWorkspace({
         setServices(serviceResponse.data);
         setGovernorates(governorateResponse.data);
         setServiceId((current) => current || serviceResponse.data[0]?.id || "");
-        setLocation((current) => current || governorateResponse.data[0]?.id || "");
+        setLocation(
+          (current) => current || governorateResponse.data[0]?.id || "",
+        );
       })
       .catch((requestError: unknown) => {
         if (active) {
@@ -101,10 +103,7 @@ export default function HomeownerWorkspace({
 
   useEffect(() => {
     let active = true;
-    apiRequest<ApiEnvelope<TechnicianProfile>>(
-      "/technicians/me/profile",
-      token,
-    )
+    apiRequest<ApiEnvelope<TechnicianProfile>>("/technicians/me/profile", token)
       .then(({ data }) => {
         if (active) {
           setHasTechnicianProfile(true);
@@ -188,7 +187,9 @@ export default function HomeownerWorkspace({
       });
       setTitle("");
       setDescription("");
-      setNotice("Your repair job is published. You can review applications here.");
+      setNotice(
+        "Your repair job is published. You can review applications here.",
+      );
       refresh();
     } catch (requestError) {
       setError(
@@ -255,7 +256,9 @@ export default function HomeownerWorkspace({
   };
 
   const deleteOpenJob = async (jobId: string) => {
-    if (!window.confirm("Delete this open repair job? This cannot be undone.")) {
+    if (
+      !window.confirm("Delete this open repair job? This cannot be undone.")
+    ) {
       return;
     }
     setError("");
@@ -295,36 +298,56 @@ export default function HomeownerWorkspace({
         <div>
           <span className="eyebrow">YOUR HOME, TAKEN CARE OF</span>
           <h2>My repairs</h2>
-          <p>Post a new job, keep track of your next visit, and look back at what’s fixed.</p>
+          <p>
+            Post a new job, keep track of your next visit, and look back at
+            what’s fixed.
+          </p>
         </div>
         <div className="workspace-heading-actions">
           <button
             className="button button-outline button-small"
             type="button"
             onClick={refresh}
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? "spin-icon" : ""} /> Refresh
+            disabled={loading}>
+            <RefreshCw size={15} className={loading ? "spin-icon" : ""} />{" "}
+            Refresh
           </button>
-          <span className="jobs-count">{activeJobCount} current {activeJobCount === 1 ? "repair" : "repairs"}</span>
+          <span className="jobs-count">
+            {activeJobCount} current{" "}
+            {activeJobCount === 1 ? "repair" : "repairs"}
+          </span>
         </div>
       </div>
 
-      {notice && <p className="feedback feedback-success" role="status">{notice}</p>}
-      {error && <p className="feedback feedback-error" role="alert">{error}</p>}
+      {notice && (
+        <p className="feedback feedback-success" role="status">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className="feedback feedback-error" role="alert">
+          {error}
+        </p>
+      )}
 
       <div className="homeowner-repairs-top-grid">
         <section className="homeowner-repair-panel homeowner-create-job-card">
           <div className="repairs-panel-heading">
             <div>
               <h3>Post a new repair job</h3>
-              <p>Tell us what needs attention. We’ll help with the next step.</p>
+              <p>
+                Tell us what needs attention. We’ll help with the next step.
+              </p>
             </div>
           </div>
           {catalogError && (
-            <p className="feedback feedback-error" role="alert">{catalogError}</p>
+            <p className="feedback feedback-error" role="alert">
+              {catalogError}
+            </p>
           )}
-          <form className="form-stack homeowner-repair-form" onSubmit={createJob}>
+          <form
+            className="form-stack homeowner-repair-form"
+            onSubmit={createJob}>
             <label>
               Job title
               <input
@@ -342,22 +365,26 @@ export default function HomeownerWorkspace({
                 <select
                   required
                   value={serviceId}
-                  onChange={(event) => setServiceId(event.target.value)}
-                >
-                  <option value="" disabled>Select a category</option>
+                  onChange={(event) => setServiceId(event.target.value)}>
+                  <option value="" disabled>
+                    Select a category
+                  </option>
                   {services.map((service) => (
-                    <option value={service.id} key={service.id}>{service.name}</option>
+                    <option value={service.id} key={service.id}>
+                      {service.name}
+                    </option>
                   ))}
                 </select>
               </label>
               <label>
-                Where is the problem?
+                Location
                 <select
                   required
                   value={location}
-                  onChange={(event) => setLocation(event.target.value)}
-                >
-                  <option value="" disabled>Select a governorate</option>
+                  onChange={(event) => setLocation(event.target.value)}>
+                  <option value="" disabled>
+                    Select a governorate
+                  </option>
                   {governorates.map((governorate) => (
                     <option value={governorate.id} key={governorate.id}>
                       {governorate.name}
@@ -379,16 +406,18 @@ export default function HomeownerWorkspace({
               />
             </label>
             <p className="repair-timing-note">
-              After a technician accepts, choose an available intervention date and time.
+              After a technician accepts, choose an available intervention date
+              and time.
             </p>
             <button
               className="button button-primary button-wide"
-              disabled={saving || !services.length || !governorates.length}
-            >
-              {saving ? "Publishing…" : "Publish repair job"} <ArrowRight size={17} />
+              disabled={saving || !services.length || !governorates.length}>
+              {saving ? "Publishing…" : "Publish repair job"}{" "}
+              <ArrowRight size={17} />
             </button>
             <span className="repair-form-footnote">
-              Posting is free. Review technician proposals before confirming a visit.
+              Posting is free. Review technician proposals before confirming a
+              visit.
             </span>
           </form>
         </section>
@@ -403,12 +432,19 @@ export default function HomeownerWorkspace({
             </span>
           </div>
           {loading ? (
-            <div className="empty-workspace repairs-panel-empty">Loading your current repair…</div>
+            <div className="empty-workspace repairs-panel-empty">
+              Loading your current repair…
+            </div>
           ) : currentJobs.length === 0 ? (
             <div className="empty-workspace repairs-panel-empty">
-              <span className="empty-icon"><BriefcaseBusiness size={22} /></span>
+              <span className="empty-icon">
+                <BriefcaseBusiness size={22} />
+              </span>
               <strong>No current repair</strong>
-              <span>When a job is posted or a technician is assigned, its progress will appear here.</span>
+              <span>
+                When a job is posted or a technician is assigned, its progress
+                will appear here.
+              </span>
             </div>
           ) : (
             <div className="homeowner-current-list">
@@ -422,7 +458,9 @@ export default function HomeownerWorkspace({
                     </article>
                   );
                 }
-                const pending = applications.filter((app) => app.status === "pending");
+                const pending = applications.filter(
+                  (app) => app.status === "pending",
+                );
                 const isExpanded = expandedJobId === job.id;
                 return (
                   <article className="homeowner-current-job" key={job.id}>
@@ -441,16 +479,19 @@ export default function HomeownerWorkspace({
                           type="button"
                           aria-label="Delete open job"
                           title="Delete open job"
-                          onClick={() => deleteOpenJob(job.id)}
-                        >
+                          onClick={() => deleteOpenJob(job.id)}>
                           <Trash2 size={17} />
                         </button>
                       )}
                     </div>
                     <h4>{job.title}</h4>
                     <div className="job-meta current-job-meta">
-                      <span><MapPin size={14} /> {governorateName(job.location)}</span>
-                      <span>{new Date(job.createdAt).toLocaleDateString()}</span>
+                      <span>
+                        <MapPin size={14} /> {governorateName(job.location)}
+                      </span>
+                      <span>
+                        {new Date(job.createdAt).toLocaleDateString()}
+                      </span>
                     </div>
 
                     {job.status === "open" && (
@@ -463,8 +504,7 @@ export default function HomeownerWorkspace({
                             job.id,
                           );
                           onNavigate("find-pro");
-                        }}
-                      >
+                        }}>
                         <UserRound size={15} /> Find available technicians
                       </button>
                     )}
@@ -477,19 +517,29 @@ export default function HomeownerWorkspace({
                         </div>
                         {applications.length === 0 ? (
                           <p className="empty-applications">
-                            No applications yet. We’ll show them here when a technician responds.
+                            No applications yet. We’ll show them here when a
+                            technician responds.
                           </p>
                         ) : (
                           applications.map((application) => (
-                            <div className="application-card" key={application.id}>
-                              <span className="application-avatar"><UserRound size={18} /></span>
+                            <div
+                              className="application-card"
+                              key={application.id}>
+                              <span className="application-avatar">
+                                <UserRound size={18} />
+                              </span>
                               <div className="application-copy">
-                                <strong>{application.technician.displayName}</strong>
-                                <span>{application.technician.description}</span>
+                                <strong>
+                                  {application.technician.displayName}
+                                </strong>
+                                <span>
+                                  {application.technician.description}
+                                </span>
                                 <p>{application.proposalMessage}</p>
                               </div>
                               {application.status === "pending" &&
-                              application.requestType === "homeowner_request" ? (
+                              application.requestType ===
+                                "homeowner_request" ? (
                                 <span className="application-status">
                                   Request sent · awaiting technician
                                 </span>
@@ -498,21 +548,34 @@ export default function HomeownerWorkspace({
                                   <button
                                     className="button button-primary button-small"
                                     type="button"
-                                    onClick={() => decideApplication(job.id, application.id, "accept")}
-                                  >
+                                    onClick={() =>
+                                      decideApplication(
+                                        job.id,
+                                        application.id,
+                                        "accept",
+                                      )
+                                    }>
                                     Accept
                                   </button>
                                   <button
                                     className="button button-outline button-small"
                                     type="button"
-                                    onClick={() => decideApplication(job.id, application.id, "decline")}
-                                  >
+                                    onClick={() =>
+                                      decideApplication(
+                                        job.id,
+                                        application.id,
+                                        "decline",
+                                      )
+                                    }>
                                     Decline
                                   </button>
                                 </div>
                               ) : (
-                                <span className={`application-status application-${application.status}`}>
-                                  {application.status === "accepted" ? "Accepted" : application.status}
+                                <span
+                                  className={`application-status application-${application.status}`}>
+                                  {application.status === "accepted"
+                                    ? "Accepted"
+                                    : application.status}
                                 </span>
                               )}
                             </div>
@@ -520,7 +583,8 @@ export default function HomeownerWorkspace({
                         )}
                         {pending.length > 0 && (
                           <p className="application-tip">
-                            Accepting one proposal assigns that technician and closes the other pending proposals.
+                            Accepting one proposal assigns that technician and
+                            closes the other pending proposals.
                           </p>
                         )}
                       </div>
@@ -550,9 +614,10 @@ export default function HomeownerWorkspace({
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                        aria-expanded={isExpanded}
-                      >
+                        onClick={() =>
+                          setExpandedJobId(isExpanded ? null : job.id)
+                        }
+                        aria-expanded={isExpanded}>
                         {isExpanded ? "Hide details" : "View repair details"}
                       </button>
                     </div>
@@ -560,7 +625,9 @@ export default function HomeownerWorkspace({
                       <div className="job-extra-details">
                         <p className="job-description">{job.description}</p>
                         <span>Job ID: {job.id}</span>
-                        <span>Created {new Date(job.createdAt).toLocaleString()}</span>
+                        <span>
+                          Created {new Date(job.createdAt).toLocaleString()}
+                        </span>
                       </div>
                     )}
                   </article>
@@ -583,8 +650,7 @@ export default function HomeownerWorkspace({
               value={historyFilter}
               onChange={(event) =>
                 setHistoryFilter(event.target.value as typeof historyFilter)
-              }
-            >
+              }>
               <option value="all">All repairs</option>
               <option value="completed">Completed</option>
               <option value="closed">Closed</option>
@@ -600,7 +666,9 @@ export default function HomeownerWorkspace({
                 ? "No completed repairs yet"
                 : `No ${historyFilter} repairs`}
             </strong>
-            <span>Completed and closed jobs will be kept here for future reference.</span>
+            <span>
+              Completed and closed jobs will be kept here for future reference.
+            </span>
           </div>
         ) : (
           <div className="repair-history-table-wrap">
@@ -632,14 +700,19 @@ export default function HomeownerWorkspace({
                         <strong>{governorateName(job.location)}</strong>
                         <small>{job.service.name}</small>
                       </td>
-                      <td>{new Date(job.updatedAt ?? job.createdAt).toLocaleDateString()}</td>
+                      <td>
+                        {new Date(
+                          job.updatedAt ?? job.createdAt,
+                        ).toLocaleDateString()}
+                      </td>
                       <td>
                         <button
                           className="text-button"
                           type="button"
-                          onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                          aria-expanded={isExpanded}
-                        >
+                          onClick={() =>
+                            setExpandedJobId(isExpanded ? null : job.id)
+                          }
+                          aria-expanded={isExpanded}>
                           {isExpanded ? "Hide details" : "View details"}
                         </button>
                         {isExpanded && (

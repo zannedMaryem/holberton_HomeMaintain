@@ -22,6 +22,7 @@ interface ProfilePageProps {
   user: Account;
   token: string;
   onUserUpdate: (user: Account) => void;
+  onTokenUpdate: (token: string) => void;
   onTechnicianProfileStatusChange: (active: boolean) => void;
 }
 
@@ -51,6 +52,7 @@ export default function ProfilePage({
   user,
   token,
   onUserUpdate,
+  onTokenUpdate,
   onTechnicianProfileStatusChange,
 }: ProfilePageProps) {
   const [firstName, lastName] = splitName(user.fullName);
@@ -297,7 +299,9 @@ export default function ProfilePage({
     setTechnicianError("");
     setTechnicianNotice("");
     try {
-      const response = await apiRequest<ApiEnvelope<TechnicianProfile>>(
+      const response = await apiRequest<
+        ApiEnvelope<TechnicianProfile> & { token: string; user: Account }
+      >(
         "/technicians/me/profile",
         token,
         {
@@ -315,6 +319,8 @@ export default function ProfilePage({
         },
       );
       setTechnicianProfile(response.data);
+      onUserUpdate(response.user);
+      onTokenUpdate(response.token);
       onTechnicianProfileStatusChange(response.data.active);
       setTechnicianNotice("Your professional profile was saved.");
     } catch (requestError) {

@@ -38,6 +38,7 @@ export default function TechnicianRepairsPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [respondingTo, setRespondingTo] = useState("");
   const [filter, setFilter] = useState<
     "all" | "awaiting" | "assigned" | "past"
   >("all");
@@ -67,6 +68,30 @@ export default function TechnicianRepairsPage({
   }, [loadJobs, refreshVersion]);
 
   const refresh = () => setRefreshVersion((version) => version + 1);
+  const respondToRequest = async (
+    job: Job,
+    decision: "accept" | "decline",
+  ) => {
+    if (!job.applicationId) return;
+    setRespondingTo(job.id);
+    setError("");
+    try {
+      await apiRequest(
+        `/jobs/${encodeURIComponent(job.id)}/applications/${encodeURIComponent(job.applicationId)}`,
+        token,
+        { method: "PATCH", body: { decision } },
+      );
+      refresh();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not update this job request.",
+      );
+    } finally {
+      setRespondingTo("");
+    }
+  };
   const completedCount = jobs.filter((job) => job.status === "completed").length;
   const awaitingCount = jobs.filter(
     (job) => job.status === "open" && job.applicationStatus === "pending",
@@ -217,6 +242,27 @@ export default function TechnicianRepairsPage({
                         token={token}
                         onRefresh={refresh}
                       />
+                    ) : job.applicationRequestType === "homeowner_request" &&
+                      job.applicationStatus === "pending" ? (
+                      <div className="application-actions technician-request-actions">
+                        <span>This homeowner is asking you to take the job.</span>
+                        <button
+                          className="button button-primary button-small"
+                          type="button"
+                          disabled={respondingTo === job.id}
+                          onClick={() => void respondToRequest(job, "accept")}
+                        >
+                          Accept
+                        </button>
+                        <button
+                          className="button button-outline button-small"
+                          type="button"
+                          disabled={respondingTo === job.id}
+                          onClick={() => void respondToRequest(job, "decline")}
+                        >
+                          Decline
+                        </button>
+                      </div>
                     ) : (
                       <div className="application-sent-note">
                         {job.status === "open" && job.applicationStatus === "pending"
