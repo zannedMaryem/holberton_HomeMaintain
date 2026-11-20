@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE = (configuredApiBase || "/api").replace(/\/$/, "");
 
 export type AccountRole = "homeowner" | "technician" | "admin";
 

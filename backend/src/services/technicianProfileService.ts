@@ -31,7 +31,7 @@ const withOfferingServices = async (
   const services = await Service.find({ _id: { $in: serviceIds } });
   const servicesById = new Map(services.map((service) => [service.id, service]));
 
-  const ratings = await getTechnicianRatingSummary(profile.id);
+  const ratings = await getTechnicianRatingSummary(profile._id.toString());
   return {
     profile,
     ratings,

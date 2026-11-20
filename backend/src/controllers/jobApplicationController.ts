@@ -99,7 +99,9 @@ export const postJobApplication = async (
       req.params.jobId,
       req.user.id,
       req.body.proposalMessage.trim(),
-      isHomeownerRequest ? req.body.technicianProfileId : undefined,
+      isHomeownerRequest && typeof req.body.technicianProfileId === "string"
+        ? req.body.technicianProfileId
+        : undefined,
     );
     res.status(201).json({
       message: "Job application submitted successfully",
@@ -215,6 +217,9 @@ export const decideJobApplication = async (
         req.body.decision,
       );
       if (req.body.decision === "decline") {
+        if (!("application" in result) || !result.application) {
+          throw new Error("Declined homeowner request was not returned");
+        }
         res.status(200).json({
           message: "Homeowner request declined successfully",
           data: { id: result.application.id, status: result.application.status },
